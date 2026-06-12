@@ -1,0 +1,23 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Go build/test artifacts
+bin/
+dist/
+coverage.out
+*.test
+*.exe
+*.out
+
+# Local runtime artifacts
+logs/
+tmp/
+*.log
+
+# IDE/system
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

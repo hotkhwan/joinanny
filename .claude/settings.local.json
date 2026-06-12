@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(winget --version)",
+      "PowerShell(if \\($?\\) { \"winget OK\" })",
+      "PowerShell(winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements)",
+      "PowerShell($git = \"$env:ProgramFiles\\\\Git\\\\cmd\\\\git.exe\"; if \\(Test-Path $git\\) { & $git --version } else { \"Git not found yet at $git\" })",
+      "PowerShell(winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements --silent --disable-interactivity)",
+      "PowerShell(& \"$env:ProgramFiles\\\\Git\\\\cmd\\\\git.exe\" --version)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); git status)",
+      "PowerShell(\"`n--- .gitignore exists? ---\")"
+    ]
+  }
+}
