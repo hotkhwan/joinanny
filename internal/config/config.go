@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -36,6 +37,7 @@ type Config struct {
 	MongoDB     MongoDBConfig
 	Stripe      StripeConfig
 	S3          S3Config
+	Auth        AuthConfig
 }
 
 type AppConfig struct {
@@ -109,6 +111,15 @@ type S3Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	ForcePathStyle  bool
+	Enabled         bool
+}
+
+// AuthConfig holds the master key used to encrypt per-user Binance credentials
+// at rest. Enabled is true once a key is provided; multi-tenant credential
+// storage stays off until then so the single-user flow is unaffected.
+type AuthConfig struct {
+	EncryptionKeyID string
+	EncryptionKey   []byte
 	Enabled         bool
 }
 
@@ -207,6 +218,10 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.S3.ForcePathStyle = reader.bool("S3_FORCE_PATH_STYLE", cfg.S3.ForcePathStyle)
 	cfg.S3.Enabled = anySet(cfg.S3.Endpoint, cfg.S3.Region, cfg.S3.Bucket, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey)
 
+	cfg.Auth.EncryptionKeyID = reader.string("CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
+	cfg.Auth.EncryptionKey = reader.base64("CREDENTIAL_ENCRYPTION_KEY")
+	cfg.Auth.Enabled = len(cfg.Auth.EncryptionKey) > 0
+
 	validate(cfg, &reader.problems)
 
 	if len(reader.problems) > 0 {
@@ -249,6 +264,9 @@ func defaultConfig() Config {
 			BaseURL:              "https://api.openai.com/v1",
 			RequestTimeout:       20 * time.Second,
 			MinConfidencePercent: 70,
+		},
+		Auth: AuthConfig{
+			EncryptionKeyID: "v1",
 		},
 	}
 }
@@ -378,6 +396,15 @@ func validate(cfg Config, problems *[]string) {
 		requireNonEmpty(problems, "S3_ACCESS_KEY_ID", cfg.S3.AccessKeyID)
 		requireNonEmpty(problems, "S3_SECRET_ACCESS_KEY", cfg.S3.SecretAccessKey)
 	}
+
+	if cfg.Auth.Enabled {
+		// 32 bytes = AES-256, matching auth.KeySize. Hardcoded here to keep the
+		// config package free of internal dependencies.
+		if len(cfg.Auth.EncryptionKey) != 32 {
+			addProblem(problems, "CREDENTIAL_ENCRYPTION_KEY must decode (base64) to exactly 32 bytes for AES-256")
+		}
+		requireNonEmpty(problems, "CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
+	}
 }
 
 type envReader struct {
@@ -437,6 +464,21 @@ func (r *envReader) seconds(name string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Second
+}
+
+func (r *envReader) base64(name string) []byte {
+	raw, ok := r.lookup(name)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		r.add("%s must be valid base64", name)
+		return nil
+	}
+
+	return decoded
 }
 
 func (r *envReader) userID(name string) int64 {
