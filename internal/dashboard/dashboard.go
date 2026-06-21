@@ -11,6 +11,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"path"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/static"
@@ -45,6 +46,14 @@ func Register(app *fiber.App) error {
 	app.Get("/*", static.New("", static.Config{
 		FS: dist,
 		NotFoundHandler: func(c fiber.Ctx) error {
+			// Only fall back to the SPA shell for client-side routes. A path
+			// whose last segment has a file extension (e.g. /assets/app.js) is a
+			// missing asset — return a real 404 rather than masking it with
+			// 200 + index.html, which would hide broken asset references and
+			// make wrong-path probes look healthy.
+			if path.Ext(c.Path()) != "" {
+				return c.SendStatus(fiber.StatusNotFound)
+			}
 			// The static handler already set 404 before delegating here; reset
 			// to 200 so SPA deep links resolve to the app shell, not an error.
 			c.Status(fiber.StatusOK)

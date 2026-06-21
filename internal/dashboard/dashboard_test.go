@@ -42,6 +42,26 @@ func TestRegisterSPAFallbackServesIndex(t *testing.T) {
 	}
 }
 
+func TestRegisterMissingAssetReturns404(t *testing.T) {
+	app := fiber.New()
+	if err := Register(app); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// A path that looks like a file (has an extension) but does not exist must
+	// return a real 404, not the SPA shell — otherwise broken asset references
+	// and wrong-path probes silently look healthy.
+	for _, target := range []string{"/assets/app.12345.js", "/missing.png", "/static/style.css"} {
+		body, status := get(t, app, target)
+		if status != http.StatusNotFound {
+			t.Fatalf("GET %s status = %d, want 404 (body: %q)", target, status, body)
+		}
+		if strings.Contains(body, "Trading Bot Dashboard") {
+			t.Fatalf("GET %s served the SPA shell instead of 404", target)
+		}
+	}
+}
+
 func TestRegisterDoesNotShadowEarlierRoutes(t *testing.T) {
 	app := fiber.New()
 	// API route registered before the dashboard catch-all, mirroring the api
