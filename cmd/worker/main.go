@@ -1,6 +1,6 @@
-// Command tradebot runs the combined all-in-one runtime (Telegram poller plus
-// the API server in a single process). It is intended for local development;
-// production deploys split these concerns into the worker and api commands.
+// Command worker runs the long-running trading worker: the Telegram poller and
+// the trading services it drives. It opens no inbound HTTP port and must run as
+// a single instance (Telegram getUpdates allows only one poller).
 package main
 
 import (
@@ -27,8 +27,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := application.Run(ctx); err != nil && !app.IsShutdown(ctx, err) {
-		logger.Error("application stopped", "error", err)
+	if err := application.RunWorker(ctx); err != nil && !app.IsShutdown(ctx, err) {
+		logger.Error("worker stopped", "error", err)
 		os.Exit(1)
 	}
 }

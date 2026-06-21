@@ -1,6 +1,6 @@
-// Command tradebot runs the combined all-in-one runtime (Telegram poller plus
-// the API server in a single process). It is intended for local development;
-// production deploys split these concerns into the worker and api commands.
+// Command api runs the HTTP server: health checks, the TradingView webhook, and
+// the dashboard. It shares MongoDB with the worker, so it can scale
+// horizontally without coordinating Telegram polling.
 package main
 
 import (
@@ -27,8 +27,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := application.Run(ctx); err != nil && !app.IsShutdown(ctx, err) {
-		logger.Error("application stopped", "error", err)
+	if err := application.RunAPI(ctx); err != nil && !app.IsShutdown(ctx, err) {
+		logger.Error("api stopped", "error", err)
 		os.Exit(1)
 	}
 }
