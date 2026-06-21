@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"bottrade/internal/config"
@@ -101,6 +102,141 @@ func TestHealthz(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
+}
+
+func TestReadyzExposesNoTradingConfig(t *testing.T) {
+	server := NewServer(testConfig(), nil, testLogger())
+
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if err != nil {
+		t.Fatalf("Test returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	for _, leak := range []string{"dry_run", "autotrade", "tradingview", "\"ai\""} {
+		if bytes.Contains(body, []byte(leak)) {
+			t.Fatalf("/readyz leaked %q: %s", leak, body)
+		}
+	}
+}
+
+func TestStatusDisabledWithoutToken(t *testing.T) {
+	server := NewServer(testConfig(), nil, testLogger())
+
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/status", nil))
+	if err != nil {
+		t.Fatalf("Test returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 when no token configured", resp.StatusCode)
+	}
+}
+
+func TestStatusRequiresBearerToken(t *testing.T) {
+	cfg := testConfigWith(t, map[string]string{"HTTP_STATUS_TOKEN": "s3cr3t-token"})
+	server := NewServer(cfg, nil, testLogger())
+
+	cases := []struct {
+		name   string
+		header string
+		want   int
+	}{
+		{"no header", "", http.StatusUnauthorized},
+		{"wrong token", "Bearer nope", http.StatusUnauthorized},
+		{"missing prefix", "s3cr3t-token", http.StatusUnauthorized},
+		{"correct token", "Bearer s3cr3t-token", http.StatusOK},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/status", nil)
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+			resp, err := server.App().Test(req)
+			if err != nil {
+				t.Fatalf("Test returned error: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.want)
+			}
+			if tc.want == http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				if !bytes.Contains(body, []byte("dry_run")) {
+					t.Fatalf("authorized /status missing flags: %s", body)
+				}
+			}
+		})
+	}
+}
+
+func TestWebhookRateLimited(t *testing.T) {
+	server := NewServer(testConfig(), signals.NewProcessor(signals.ProcessorConfig{Logger: testLogger()}), testLogger())
+
+	var last int
+	for i := 0; i < 31; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/tradingview/webhook", bytes.NewBufferString(`{"secret":"wrong"}`))
+		resp, err := server.App().Test(req)
+		if err != nil {
+			t.Fatalf("request %d error: %v", i, err)
+		}
+		last = resp.StatusCode
+		resp.Body.Close()
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("request 31 status = %d, want 429 (rate limit not enforced)", last)
+	}
+}
+
+func TestWebhookBodyLimit(t *testing.T) {
+	server := NewServer(testConfig(), signals.NewProcessor(signals.ProcessorConfig{Logger: testLogger()}), testLogger())
+
+	big := bytes.Repeat([]byte("a"), webhookBodyLimit+1)
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodPost, "/tradingview/webhook", bytes.NewReader(big)))
+	if err != nil {
+		// Fiber rejects oversized bodies at the transport layer; app.Test
+		// surfaces that as an error instead of a 413 response. Either way the
+		// request is rejected, which is the behavior under test.
+		if !strings.Contains(err.Error(), "limit") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 for oversized body", resp.StatusCode)
+	}
+}
+
+func testConfigWith(t *testing.T, overrides map[string]string) config.Config {
+	t.Helper()
+	values := map[string]string{
+		"TELEGRAM_BOT_TOKEN":         "123:abc",
+		"TELEGRAM_ALLOWED_USER_IDS":  "12345",
+		"MONGODB_URI":                "mongodb+srv://mongo.example.invalid/tradebot",
+		"MONGODB_DATABASE":           "tradebot",
+		"HTTP_ENABLED":               "true",
+		"TRADINGVIEW_ENABLED":        "true",
+		"TRADINGVIEW_WEBHOOK_SECRET": "secret",
+	}
+	for k, v := range overrides {
+		values[k] = v
+	}
+	cfg, err := config.LoadFromLookup(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+	if err != nil {
+		t.Fatalf("config load: %v", err)
+	}
+	return cfg
 }
 
 func testConfig() config.Config {

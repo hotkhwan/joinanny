@@ -15,7 +15,12 @@ import (
 	"bottrade/internal/signals"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 )
+
+// webhookBodyLimit caps request bodies. Every endpoint here takes small JSON or
+// no body, so a tight limit blunts memory-exhaustion abuse on the public port.
+const webhookBodyLimit = 256 * 1024
 
 type Server struct {
 	cfg       config.Config
@@ -34,7 +39,8 @@ func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Log
 		processor: processor,
 		logger:    logger,
 		app: fiber.New(fiber.Config{
-			AppName: "tradebot",
+			AppName:   "tradebot",
+			BodyLimit: webhookBodyLimit,
 		}),
 	}
 	server.routes()
@@ -66,16 +72,30 @@ func (s *Server) routes() {
 	s.app.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
+	// Readiness probe stays public but exposes no trading config — the detailed
+	// flags moved to the token-gated /status below.
 	s.app.Get("/readyz", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status":      "ok",
-			"tradingview": s.cfg.TradingView.Enabled,
-			"ai":          s.cfg.AI.Enabled,
-			"autotrade":   s.cfg.AI.AutoTradeEnabled,
-			"dry_run":     s.cfg.App.DryRun,
-		})
+		return c.JSON(fiber.Map{"status": "ok"})
 	})
-	s.app.Post("/tradingview/webhook", s.handleTradingViewWebhook)
+	s.app.Get("/status", s.handleStatus)
+
+	// Rate-limit the public webhook: it is the only internet-reachable path that
+	// can drive the signal/order flow, so cap brute-forcing of the secret and
+	// signal floods. Default key is the client IP (Fly-Client-IP behind Fly).
+	webhookLimiter := limiter.New(limiter.Config{
+		Max:        30,
+		Expiration: time.Minute,
+		KeyGenerator: func(c fiber.Ctx) string {
+			if ip := strings.TrimSpace(c.Get("Fly-Client-IP")); ip != "" {
+				return ip
+			}
+			return c.IP()
+		},
+		LimitReached: func(c fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "rate limit exceeded"})
+		},
+	})
+	s.app.Post("/tradingview/webhook", webhookLimiter, s.handleTradingViewWebhook)
 
 	// Mount the embedded dashboard last: its "/*" catch-all must not shadow the
 	// API routes above. A mount failure must not take down the API, so log and
@@ -83,6 +103,39 @@ func (s *Server) routes() {
 	if err := dashboard.Register(s.app); err != nil {
 		s.logger.Error("dashboard mount failed", "error", err)
 	}
+}
+
+// handleStatus serves operational/trading config flags, gated by a bearer
+// token. When no token is configured the endpoint is disabled (404) so the
+// flags are never exposed unauthenticated on the public port.
+func (s *Server) handleStatus(c fiber.Ctx) error {
+	token := s.cfg.HTTP.StatusToken
+	if token == "" {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "status endpoint is disabled"})
+	}
+
+	provided := bearerToken(c)
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+		s.logger.Warn("status endpoint rejected")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":      "ok",
+		"tradingview": s.cfg.TradingView.Enabled,
+		"ai":          s.cfg.AI.Enabled,
+		"autotrade":   s.cfg.AI.AutoTradeEnabled,
+		"dry_run":     s.cfg.App.DryRun,
+	})
+}
+
+func bearerToken(c fiber.Ctx) string {
+	header := strings.TrimSpace(c.Get(fiber.HeaderAuthorization))
+	const prefix = "Bearer "
+	if len(header) > len(prefix) && strings.EqualFold(header[:len(prefix)], prefix) {
+		return strings.TrimSpace(header[len(prefix):])
+	}
+	return ""
 }
 
 func (s *Server) handleTradingViewWebhook(c fiber.Ctx) error {

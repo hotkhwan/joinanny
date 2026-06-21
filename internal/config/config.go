@@ -64,6 +64,9 @@ type TelegramConfig struct {
 type HTTPConfig struct {
 	Addr    string
 	Enabled bool
+	// StatusToken gates the detailed /status endpoint. Empty disables /status
+	// entirely so trading config is never exposed unauthenticated.
+	StatusToken string
 }
 
 type BinanceConfig struct {
@@ -181,6 +184,7 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 
 	cfg.HTTP.Addr = reader.string("HTTP_ADDR", cfg.HTTP.Addr)
 	cfg.HTTP.Enabled = reader.bool("HTTP_ENABLED", cfg.HTTP.Enabled)
+	cfg.HTTP.StatusToken = reader.string("HTTP_STATUS_TOKEN", cfg.HTTP.StatusToken)
 
 	cfg.Binance.APIKey = reader.string("BINANCE_API_KEY", cfg.Binance.APIKey)
 	cfg.Binance.APISecret = reader.string("BINANCE_API_SECRET", cfg.Binance.APISecret)
