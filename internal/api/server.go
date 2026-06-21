@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,7 +108,9 @@ func (s *Server) handleTradingViewWebhook(c fiber.Ctx) error {
 	if secret == "" {
 		secret = strings.TrimSpace(payload.Secret)
 	}
-	if secret != s.cfg.TradingView.WebhookSecret {
+	// Constant-time compare: the webhook is on a public port, so a byte-by-byte
+	// `!=` would leak the secret through response timing.
+	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.TradingView.WebhookSecret)) != 1 {
 		s.logger.Warn("tradingview webhook rejected")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized webhook"})
 	}

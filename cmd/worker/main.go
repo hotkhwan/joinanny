@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -34,5 +35,7 @@ func main() {
 }
 
 func isShutdown(ctx context.Context, err error) bool {
-	return ctx.Err() != nil && err == ctx.Err()
+	// errors.Is, not ==, so a shutdown error wrapped anywhere up the stack is
+	// still recognised as graceful rather than logged as a fatal crash.
+	return ctx.Err() != nil && errors.Is(err, ctx.Err())
 }
