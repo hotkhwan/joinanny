@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bottrade/internal/auth"
 )
 
 const (
@@ -402,10 +404,8 @@ func validate(cfg Config, problems *[]string) {
 	}
 
 	if cfg.Auth.Enabled {
-		// 32 bytes = AES-256, matching auth.KeySize. Hardcoded here to keep the
-		// config package free of internal dependencies.
-		if len(cfg.Auth.EncryptionKey) != 32 {
-			addProblem(problems, "CREDENTIAL_ENCRYPTION_KEY must decode (base64) to exactly 32 bytes for AES-256")
+		if len(cfg.Auth.EncryptionKey) != auth.KeySize {
+			addProblem(problems, fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY must decode (base64) to exactly %d bytes for AES-256", auth.KeySize))
 		}
 		requireNonEmpty(problems, "CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
 	}

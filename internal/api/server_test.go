@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -167,38 +168,69 @@ func TestStatusRequiresBearerToken(t *testing.T) {
 			if resp.StatusCode != tc.want {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.want)
 			}
-			if tc.want == http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				if !bytes.Contains(body, []byte("dry_run")) {
-					t.Fatalf("authorized /status missing flags: %s", body)
-				}
+			body, _ := io.ReadAll(resp.Body)
+			// The configured token must never appear in any response body.
+			if bytes.Contains(body, []byte("s3cr3t-token")) {
+				t.Fatalf("/status response leaked the token: %s", body)
+			}
+			if tc.want == http.StatusOK && !bytes.Contains(body, []byte("dry_run")) {
+				t.Fatalf("authorized /status missing flags: %s", body)
 			}
 		})
 	}
 }
 
-func TestWebhookRateLimited(t *testing.T) {
+func TestWebhookRateLimitPerClient(t *testing.T) {
+	server := NewServer(testConfig(), signals.NewProcessor(signals.ProcessorConfig{Logger: testLogger()}), testLogger())
+	const ip = "203.0.113.7"
+
+	// The first webhookRatePerIP requests from one client must be allowed
+	// (reaching the handler -> 401 on the wrong secret), proving the limiter
+	// does not reject everything; only the next one is rate-limited.
+	for i := 0; i < webhookRatePerIP; i++ {
+		if got := postWebhook(t, server, ip); got == http.StatusTooManyRequests {
+			t.Fatalf("request %d returned 429 before the per-client limit", i+1)
+		}
+	}
+	if got := postWebhook(t, server, ip); got != http.StatusTooManyRequests {
+		t.Fatalf("request %d status = %d, want 429 past the per-client limit", webhookRatePerIP+1, got)
+	}
+}
+
+func TestWebhookGlobalRateCeiling(t *testing.T) {
 	server := NewServer(testConfig(), signals.NewProcessor(signals.ProcessorConfig{Logger: testLogger()}), testLogger())
 
-	var last int
-	for i := 0; i < 31; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/tradingview/webhook", bytes.NewBufferString(`{"secret":"wrong"}`))
-		resp, err := server.App().Test(req)
-		if err != nil {
-			t.Fatalf("request %d error: %v", i, err)
+	// Every request uses a distinct Fly-Client-IP so the per-client limiter
+	// never trips. The global ceiling must still bound total attempts, proving a
+	// spoofed/rotated client key cannot grant unlimited webhook tries.
+	for i := 0; i < webhookRateGlobal; i++ {
+		if got := postWebhook(t, server, fmt.Sprintf("198.51.100.%d", i)); got == http.StatusTooManyRequests {
+			t.Fatalf("request %d hit 429 before the global ceiling", i+1)
 		}
-		last = resp.StatusCode
-		resp.Body.Close()
 	}
-	if last != http.StatusTooManyRequests {
-		t.Fatalf("request 31 status = %d, want 429 (rate limit not enforced)", last)
+	if got := postWebhook(t, server, "198.51.100.250"); got != http.StatusTooManyRequests {
+		t.Fatalf("request %d status = %d, want 429 at the global ceiling", webhookRateGlobal+1, got)
 	}
+}
+
+func postWebhook(t *testing.T, server *Server, flyClientIP string) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/tradingview/webhook", bytes.NewBufferString(`{"secret":"wrong"}`))
+	if flyClientIP != "" {
+		req.Header.Set("Fly-Client-IP", flyClientIP)
+	}
+	resp, err := server.App().Test(req)
+	if err != nil {
+		t.Fatalf("webhook request: %v", err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode
 }
 
 func TestWebhookBodyLimit(t *testing.T) {
 	server := NewServer(testConfig(), signals.NewProcessor(signals.ProcessorConfig{Logger: testLogger()}), testLogger())
 
-	big := bytes.Repeat([]byte("a"), webhookBodyLimit+1)
+	big := bytes.Repeat([]byte("a"), maxRequestBodyLimit+1)
 	resp, err := server.App().Test(httptest.NewRequest(http.MethodPost, "/tradingview/webhook", bytes.NewReader(big)))
 	if err != nil {
 		// Fiber rejects oversized bodies at the transport layer; app.Test

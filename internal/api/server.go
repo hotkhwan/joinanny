@@ -18,9 +18,20 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/limiter"
 )
 
-// webhookBodyLimit caps request bodies. Every endpoint here takes small JSON or
-// no body, so a tight limit blunts memory-exhaustion abuse on the public port.
-const webhookBodyLimit = 256 * 1024
+const (
+	// maxRequestBodyLimit caps request bodies on every route. Every endpoint
+	// here takes small JSON or no body, so a tight limit blunts
+	// memory-exhaustion abuse on the public port.
+	maxRequestBodyLimit = 256 * 1024
+
+	// Webhook rate limits: a per-client cap for fairness plus a global ceiling.
+	// The per-client key is the client IP, but Fly-Client-IP is a
+	// client-supplied header, so the global ceiling is the backstop that bounds
+	// secret brute-forcing even if the per-client key is spoofed off the proxy.
+	webhookRatePerIP  = 30
+	webhookRateGlobal = 120
+	webhookRateWindow = time.Minute
+)
 
 type Server struct {
 	cfg       config.Config
@@ -40,7 +51,7 @@ func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Log
 		logger:    logger,
 		app: fiber.New(fiber.Config{
 			AppName:   "tradebot",
-			BodyLimit: webhookBodyLimit,
+			BodyLimit: maxRequestBodyLimit,
 		}),
 	}
 	server.routes()
@@ -81,21 +92,28 @@ func (s *Server) routes() {
 
 	// Rate-limit the public webhook: it is the only internet-reachable path that
 	// can drive the signal/order flow, so cap brute-forcing of the secret and
-	// signal floods. Default key is the client IP (Fly-Client-IP behind Fly).
-	webhookLimiter := limiter.New(limiter.Config{
-		Max:        30,
-		Expiration: time.Minute,
+	// signal floods. A per-client limiter gives fairness; a global ceiling is
+	// the security backstop, since the per-client key derives from the
+	// client-supplied Fly-Client-IP header and could be rotated to dodge the
+	// per-client cap.
+	perIPLimiter := limiter.New(limiter.Config{
+		Max:        webhookRatePerIP,
+		Expiration: webhookRateWindow,
 		KeyGenerator: func(c fiber.Ctx) string {
 			if ip := strings.TrimSpace(c.Get("Fly-Client-IP")); ip != "" {
 				return ip
 			}
 			return c.IP()
 		},
-		LimitReached: func(c fiber.Ctx) error {
-			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "rate limit exceeded"})
-		},
+		LimitReached: webhookRateLimited,
 	})
-	s.app.Post("/tradingview/webhook", webhookLimiter, s.handleTradingViewWebhook)
+	globalLimiter := limiter.New(limiter.Config{
+		Max:          webhookRateGlobal,
+		Expiration:   webhookRateWindow,
+		KeyGenerator: func(fiber.Ctx) string { return "tradingview-webhook" },
+		LimitReached: webhookRateLimited,
+	})
+	s.app.Post("/tradingview/webhook", globalLimiter, perIPLimiter, s.handleTradingViewWebhook)
 
 	// Mount the embedded dashboard last: its "/*" catch-all must not shadow the
 	// API routes above. A mount failure must not take down the API, so log and
@@ -127,6 +145,10 @@ func (s *Server) handleStatus(c fiber.Ctx) error {
 		"autotrade":   s.cfg.AI.AutoTradeEnabled,
 		"dry_run":     s.cfg.App.DryRun,
 	})
+}
+
+func webhookRateLimited(c fiber.Ctx) error {
+	return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "rate limit exceeded"})
 }
 
 func bearerToken(c fiber.Ctx) string {

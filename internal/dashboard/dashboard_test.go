@@ -31,14 +31,17 @@ func TestRegisterSPAFallbackServesIndex(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	// A deep-link route that has no embedded file must fall back to index.html
-	// (200 + HTML) so client-side routing survives a refresh.
-	body, status := get(t, app, "/positions/abc123")
-	if status != http.StatusOK {
-		t.Fatalf("SPA fallback status = %d, want 200", status)
-	}
-	if !strings.Contains(body, "Trading Bot Dashboard") {
-		t.Fatalf("SPA fallback did not serve index.html: %q", body)
+	// A browser navigation (Accept: text/html) to a deep-link route with no
+	// embedded file must fall back to index.html (200) so client-side routing
+	// survives a refresh — including routes whose last segment contains a dot.
+	for _, route := range []string{"/positions/abc123", "/positions/v1.2", "/u/john.doe"} {
+		body, status := getNav(t, app, route)
+		if status != http.StatusOK {
+			t.Fatalf("SPA fallback %s status = %d, want 200", route, status)
+		}
+		if !strings.Contains(body, "Trading Bot Dashboard") {
+			t.Fatalf("SPA fallback %s did not serve index.html: %q", route, body)
+		}
 	}
 }
 
@@ -80,9 +83,25 @@ func TestRegisterDoesNotShadowEarlierRoutes(t *testing.T) {
 	}
 }
 
+// get issues a plain GET (no Accept), mimicking an asset/XHR fetch.
 func get(t *testing.T, app *fiber.App, target string) (string, int) {
 	t.Helper()
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, target, nil))
+	return getWith(t, app, target, "")
+}
+
+// getNav issues a browser-navigation GET (Accept: text/html).
+func getNav(t *testing.T, app *fiber.App, target string) (string, int) {
+	t.Helper()
+	return getWith(t, app, target, "text/html")
+}
+
+func getWith(t *testing.T, app *fiber.App, target, accept string) (string, int) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("Test %s: %v", target, err)
 	}
