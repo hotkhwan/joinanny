@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"bottrade/internal/ai"
 	"bottrade/internal/api"
 	"bottrade/internal/config"
 	binanceexec "bottrade/internal/exchange/binance"
+	"bottrade/internal/logging"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
 	"bottrade/internal/signals"
@@ -32,15 +34,28 @@ func New(cfg config.Config, logger *slog.Logger) *App {
 	}
 }
 
-func (a *App) Run(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+// Bootstrap loads configuration from the environment, builds the configured
+// logger, and returns a ready App. Each process entrypoint (worker, api, the
+// combined tradebot) calls this so configuration and logging are wired
+// identically regardless of which runtime is started.
+func Bootstrap() (*App, *slog.Logger, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, nil, err
 	}
 
+	logger, err := logging.New(cfg.App.LogLevel, os.Stdout)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return New(cfg, logger), logger, nil
+}
+
+func (a *App) logBootstrap(role string) {
 	a.logger.Info(
 		"application bootstrap complete",
+		"role", role,
 		"env", a.cfg.App.Env,
 		"dry_run", a.cfg.App.DryRun,
 		"real_trading_enabled", a.cfg.App.RealTradingEnabled,
@@ -48,6 +63,18 @@ func (a *App) Run(ctx context.Context) error {
 		"binance_testnet", a.cfg.Binance.Testnet,
 		"mongodb_database", a.cfg.MongoDB.Database,
 	)
+}
+
+// Run starts the combined all-in-one runtime: the Telegram poller and (when
+// HTTP is enabled) the API server in a single process. It is used by the local
+// cmd/tradebot entrypoint for development. Production deploys split these into
+// the worker and api processes via RunWorker and RunAPI.
+func (a *App) Run(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	a.logBootstrap("all")
 
 	orderService, statusService, planService, signalStore, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
@@ -101,6 +128,59 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	return runner.Run(ctx)
+}
+
+// RunWorker starts the worker process: the long-running Telegram poller plus
+// the trading services it drives. It never opens an inbound HTTP port, so it is
+// safe to run as a single always-on machine. Telegram getUpdates allows only
+// one poller, so this process must not be scaled beyond one instance.
+func (a *App) RunWorker(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	a.logBootstrap("worker")
+
+	orderService, statusService, planService, _, cleanup, err := a.newTradingServices(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	if a.cfg.Telegram.Mode != config.TelegramModePolling {
+		a.logger.Info("telegram mode is not polling; worker idle until shutdown", "telegram_mode", a.cfg.Telegram.Mode)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	runner, err := telegram.NewPollingRunner(a.cfg, orderService, statusService, planService, a.logger)
+	if err != nil {
+		return err
+	}
+
+	return runner.Run(ctx)
+}
+
+// RunAPI starts the api process: the Fiber HTTP server (health checks, the
+// TradingView webhook, and the future dashboard). It shares the same MongoDB as
+// the worker, so confirmations created here are completed by the worker's
+// Telegram poller. This process is free to scale horizontally.
+func (a *App) RunAPI(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	a.logBootstrap("api")
+
+	orderService, _, _, signalStore, cleanup, err := a.newTradingServices(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	processor := a.newSignalProcessor(orderService, signalStore)
+	server := api.NewServer(a.cfg, processor, a.logger)
+	return server.Run(ctx)
 }
 
 func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.StatusService, *plans.Service, signals.SignalStore, func(), error) {
