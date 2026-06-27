@@ -104,6 +104,43 @@ func TestHandlerBacktestWithoutKlines(t *testing.T) {
 	}
 }
 
+func TestHandlerGoalCommand(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+	sender := &fakeSender{}
+
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/goal profit 10 capital 100 winrate 60")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	got := sender.singleMessage(t)
+	for _, want := range []string{"Goal: make 10 USDT", "100 USDT capital", "Simulation", "target reached", "no real orders"} {
+		if !strings.Contains(got.Text, want) {
+			t.Fatalf("goal message missing %q: %q", want, got.Text)
+		}
+	}
+}
+
+func TestHandlerGoalCommandThaiFallbackAndUsage(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+
+	// Thai-ish text with a usdt-suffixed amount → target parsed via fallback.
+	s1 := &fakeSender{}
+	if err := handler.Handle(context.Background(), s1, textUpdate(12345, 111, "/goal ทำกำไร 10usdt")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if !strings.Contains(s1.singleMessage(t).Text, "Goal: make 10 USDT") {
+		t.Fatalf("thai fallback failed: %q", s1.singleMessage(t).Text)
+	}
+
+	// No target → usage help.
+	s2 := &fakeSender{}
+	if err := handler.Handle(context.Background(), s2, textUpdate(12345, 111, "/goal")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if !strings.Contains(s2.singleMessage(t).Text, "target profit") {
+		t.Fatalf("expected usage help: %q", s2.singleMessage(t).Text)
+	}
+}
+
 func TestHandlerStartCommand(t *testing.T) {
 	handler := NewHandler(12345, nil, testLogger())
 	sender := &fakeSender{}

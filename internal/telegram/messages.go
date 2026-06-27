@@ -24,6 +24,9 @@ Market data (free Binance order-flow the AI reads):
 Backtest a strategy on history (offline, no risk):
 /backtest BTC
 
+Profit goal — preview the plan (simulation, no real orders):
+/goal profit 10 capital 100
+
 Phase 2 management:
 be BTC
 move sl BTC to be
