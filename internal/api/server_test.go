@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"bottrade/internal/config"
+	"bottrade/internal/decimal"
+	"bottrade/internal/journal"
 	"bottrade/internal/signals"
 	"bottrade/internal/users"
 )
@@ -283,6 +286,43 @@ func TestRegisterAndLogin(t *testing.T) {
 	_, body := post("/api/login", `{"username":"alice","password":"supersecret"}`)
 	if bytes.Contains(body, []byte("password")) || bytes.Contains(body, []byte("hash")) {
 		t.Fatalf("login response leaked password material: %s", body)
+	}
+}
+
+func TestReportEndpoint(t *testing.T) {
+	repo := journal.NewMemoryRepository()
+	jsvc, err := journal.NewService(repo)
+	if err != nil {
+		t.Fatalf("journal.NewService: %v", err)
+	}
+	ctx := context.Background()
+	_ = jsvc.Record(ctx, journal.Trade{ID: "1", UserID: 1, Symbol: "BTCUSDT", Outcome: journal.OutcomeWin, PnLUSDT: decimal.MustParse("2")})
+	_ = jsvc.Record(ctx, journal.Trade{ID: "2", UserID: 1, Symbol: "BTCUSDT", Outcome: journal.OutcomeLoss, PnLUSDT: decimal.MustParse("-1")})
+
+	server := NewServer(testConfig(), nil, testLogger(), WithReport(jsvc))
+	resp, err := server.App().Test(httptest.NewRequest(http.MethodGet, "/api/report", nil))
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var report journal.Report
+	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if report.Trades != 2 || report.Wins != 1 || report.Losses != 1 ||
+		report.WinRate.String() != "50" || report.TotalPnL.String() != "1" {
+		t.Fatalf("report = %+v, want 2 trades 50%% +1", report)
+	}
+
+	// Disabled when no report service is wired.
+	plain := NewServer(testConfig(), nil, testLogger())
+	r2, _ := plain.App().Test(httptest.NewRequest(http.MethodGet, "/api/report", nil))
+	defer r2.Body.Close()
+	if r2.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("disabled report status = %d, want 501", r2.StatusCode)
 	}
 }
 

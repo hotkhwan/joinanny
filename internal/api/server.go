@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
 	"bottrade/internal/config"
 	"bottrade/internal/dashboard"
+	"bottrade/internal/journal"
 	"bottrade/internal/signals"
 	"bottrade/internal/users"
 
@@ -38,6 +40,7 @@ type Server struct {
 	cfg       config.Config
 	processor *signals.Processor
 	users     *users.Service
+	report    *journal.Service
 	logger    *slog.Logger
 	app       *fiber.App
 }
@@ -48,6 +51,11 @@ type Option func(*Server)
 // WithUsers enables the registration/login endpoints backed by svc.
 func WithUsers(svc *users.Service) Option {
 	return func(s *Server) { s.users = svc }
+}
+
+// WithReport enables the GET /api/report endpoint backed by the trade journal.
+func WithReport(svc *journal.Service) Option {
+	return func(s *Server) { s.report = svc }
 }
 
 func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Logger, opts ...Option) *Server {
@@ -112,6 +120,7 @@ func (s *Server) routes() {
 	})
 	s.app.Post("/api/register", authLimiter, s.handleRegister)
 	s.app.Post("/api/login", authLimiter, s.handleLogin)
+	s.app.Get("/api/report", s.handleReport)
 
 	// Rate-limit the public webhook: it is the only internet-reachable path that
 	// can drive the signal/order flow, so cap brute-forcing of the secret and
@@ -195,6 +204,32 @@ func (s *Server) handleRegister(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"id": user.ID, "username": user.Username, "role": user.Role})
+}
+
+func (s *Server) handleReport(c fiber.Ctx) error {
+	if s.report == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "reporting is not enabled"})
+	}
+	filter := journal.Filter{ClosedOnly: true}
+	if raw := strings.TrimSpace(c.Query("user")); raw != "" {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			filter.UserID = id
+		}
+	}
+	if mode := strings.TrimSpace(c.Query("mode")); mode != "" {
+		filter.Mode = mode
+	}
+	if strategy := strings.TrimSpace(c.Query("strategy")); strategy != "" {
+		filter.Strategy = strategy
+	}
+	if symbol := strings.TrimSpace(c.Query("symbol")); symbol != "" {
+		filter.Symbol = symbol
+	}
+	report, err := s.report.Report(c.Context(), filter)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(report)
 }
 
 func (s *Server) handleLogin(c fiber.Ctx) error {
