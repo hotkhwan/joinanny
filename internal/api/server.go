@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"bottrade/internal/auth"
 	"bottrade/internal/config"
 	"bottrade/internal/dashboard"
 	"bottrade/internal/journal"
@@ -41,6 +42,7 @@ type Server struct {
 	processor *signals.Processor
 	users     *users.Service
 	report    *journal.Service
+	tokenizer *auth.Tokenizer
 	logger    *slog.Logger
 	app       *fiber.App
 }
@@ -51,6 +53,12 @@ type Option func(*Server)
 // WithUsers enables the registration/login endpoints backed by svc.
 func WithUsers(svc *users.Service) Option {
 	return func(s *Server) { s.users = svc }
+}
+
+// WithTokenizer enables session JWTs: login returns a token and protected
+// endpoints require it.
+func WithTokenizer(t *auth.Tokenizer) Option {
+	return func(s *Server) { s.tokenizer = t }
 }
 
 // WithReport enables the GET /api/report endpoint backed by the trade journal.
@@ -244,7 +252,43 @@ func (s *Server) handleLogin(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid username or password"})
 	}
-	return c.JSON(fiber.Map{"id": user.ID, "username": user.Username, "role": user.Role})
+	return c.JSON(s.loginResponse(user.ID, user.Username, string(user.Role)))
+}
+
+// loginResponse returns the user fields plus a session token when a tokenizer
+// is configured. Both the password and Telegram login paths use it.
+func (s *Server) loginResponse(id, username, role string) fiber.Map {
+	out := fiber.Map{"id": id, "username": username, "role": role}
+	if s.tokenizer != nil {
+		if token, err := s.tokenizer.Issue(id, username, role); err == nil {
+			out["token"] = token
+		} else {
+			s.logger.Error("issue session token failed", "error", err)
+		}
+	}
+	return out
+}
+
+// requireAuth is middleware that rejects requests without a valid session token
+// and stores the verified claims for the handler.
+func (s *Server) requireAuth(c fiber.Ctx) error {
+	if s.tokenizer == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "auth is not enabled"})
+	}
+	claims, err := s.tokenizer.Verify(bearerToken(c))
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	c.Locals("claims", claims)
+	return c.Next()
+}
+
+// claims returns the authenticated user's claims set by requireAuth.
+func claimsOf(c fiber.Ctx) auth.Claims {
+	if v, ok := c.Locals("claims").(auth.Claims); ok {
+		return v
+	}
+	return auth.Claims{}
 }
 
 func bearerToken(c fiber.Ctx) string {

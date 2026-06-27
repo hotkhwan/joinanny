@@ -9,6 +9,7 @@ import (
 
 	"bottrade/internal/ai"
 	"bottrade/internal/api"
+	"bottrade/internal/auth"
 	"bottrade/internal/config"
 	"bottrade/internal/decimal"
 	binanceexec "bottrade/internal/exchange/binance"
@@ -252,6 +253,14 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 	if store, ok := signalStore.(*mongostore.Store); ok {
 		if reportService, err := journal.NewService(store.Journal()); err == nil {
 			opts = append(opts, api.WithReport(reportService))
+		}
+	}
+
+	if len(a.cfg.Auth.TokenSecret) > 0 {
+		if tokenizer, err := auth.NewTokenizer(a.cfg.Auth.TokenSecret, a.cfg.Auth.TokenTTL); err == nil {
+			opts = append(opts, api.WithTokenizer(tokenizer))
+		} else {
+			a.logger.Warn("session tokens disabled", "error", err)
 		}
 	}
 	return opts

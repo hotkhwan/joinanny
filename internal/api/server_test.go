@@ -12,12 +12,56 @@ import (
 	"strings"
 	"testing"
 
+	"bottrade/internal/auth"
 	"bottrade/internal/config"
 	"bottrade/internal/decimal"
 	"bottrade/internal/journal"
 	"bottrade/internal/signals"
 	"bottrade/internal/users"
 )
+
+func testTokenizer(t *testing.T) *auth.Tokenizer {
+	t.Helper()
+	tk, err := auth.NewTokenizer(bytes.Repeat([]byte("k"), auth.MinSecretSize), 0)
+	if err != nil {
+		t.Fatalf("NewTokenizer: %v", err)
+	}
+	return tk
+}
+
+func TestLoginIssuesSessionToken(t *testing.T) {
+	userSvc, _ := users.NewService(users.NewMemoryRepository())
+	tk := testTokenizer(t)
+	server := NewServer(testConfig(), nil, testLogger(), WithUsers(userSvc), WithTokenizer(tk))
+
+	post := func(path, payload string) []byte {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(payload))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := server.App().Test(req)
+		if err != nil {
+			t.Fatalf("Test %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return body
+	}
+
+	post("/api/register", `{"username":"alice","password":"supersecret"}`)
+	body := post("/api/login", `{"username":"alice","password":"supersecret"}`)
+
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	token, _ := out["token"].(string)
+	if token == "" {
+		t.Fatalf("login returned no token: %s", body)
+	}
+	claims, err := tk.Verify(token)
+	if err != nil || claims.Username != "alice" {
+		t.Fatalf("token verify = %+v, %v", claims, err)
+	}
+}
 
 func TestTradingViewWebhookAcceptsSignal(t *testing.T) {
 	cfg := testConfig()
