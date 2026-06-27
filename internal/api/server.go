@@ -208,7 +208,14 @@ func (s *Server) handleStream(c fiber.Ctx) error {
 	if token == "" {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "realtime stream is disabled"})
 	}
-	if subtle.ConstantTimeCompare([]byte(bearerToken(c)), []byte(token)) != 1 {
+	// The browser EventSource API cannot set an Authorization header, so the
+	// stream also accepts the token as a ?token= query param. Constant-time
+	// compare either way.
+	provided := bearerToken(c)
+	if provided == "" {
+		provided = strings.TrimSpace(c.Query("token"))
+	}
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 		s.logger.Warn("stream endpoint rejected")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}

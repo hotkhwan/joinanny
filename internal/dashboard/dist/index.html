@@ -46,6 +46,18 @@
         <div id="report">Loading…</div>
       </section>
 
+      <section class="card">
+        <strong>Live positions</strong>
+        <label for="stream-token">Status token</label>
+        <input id="stream-token" type="password" placeholder="HTTP_STATUS_TOKEN" />
+        <div class="actions">
+          <button class="primary" id="stream-connect">Connect</button>
+          <button class="ghost" id="stream-disconnect">Disconnect</button>
+        </div>
+        <div class="msg" id="stream-msg"></div>
+        <div id="stream-feed"></div>
+      </section>
+
       <section class="card" id="status">Loading status…</section>
     </main>
     <script>
@@ -93,6 +105,49 @@
         .catch(() => {
           document.getElementById("report").textContent = "No closed trades yet.";
         });
+
+      // Live positions via Server-Sent Events. The browser EventSource cannot
+      // set an Authorization header, so the status token is passed as a query
+      // param (it is the owner's own token on the owner's dashboard).
+      let stream = null;
+      const streamMsg = document.getElementById("stream-msg");
+      const streamFeed = document.getElementById("stream-feed");
+      const tokenInput = document.getElementById("stream-token");
+      tokenInput.value = localStorage.getItem("statusToken") || "";
+
+      function streamShow(text, ok) {
+        streamMsg.textContent = text;
+        streamMsg.style.color = ok ? "#16a34a" : "#dc2626";
+      }
+      function renderEvent(kind, e) {
+        let d = {};
+        try { d = JSON.parse(e.data); } catch (_) { return; }
+        const when = new Date(d.at || Date.now()).toLocaleTimeString();
+        const label =
+          kind === "trade_closed"
+            ? `closed · PnL ${d.realized_pnl} USDT`
+            : `${d.side} ${d.amount} @ ${d.mark_price} · uPnL ${d.unrealized_pnl}`;
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `<span>${when} · ${d.symbol}</span><strong>${label}</strong>`;
+        streamFeed.prepend(row);
+        while (streamFeed.childElementCount > 20) streamFeed.lastChild.remove();
+      }
+      document.getElementById("stream-connect").onclick = () => {
+        const token = tokenInput.value.trim();
+        if (!token) { streamShow("Enter the status token first.", false); return; }
+        localStorage.setItem("statusToken", token);
+        if (stream) stream.close();
+        stream = new EventSource("/api/stream?token=" + encodeURIComponent(token));
+        stream.onopen = () => streamShow("Connected.", true);
+        stream.onerror = () => streamShow("Disconnected (check token / dry-run).", false);
+        stream.addEventListener("position_update", (e) => renderEvent("position_update", e));
+        stream.addEventListener("trade_closed", (e) => renderEvent("trade_closed", e));
+      };
+      document.getElementById("stream-disconnect").onclick = () => {
+        if (stream) { stream.close(); stream = null; }
+        streamShow("Disconnected.", true);
+      };
 
       fetch("/readyz")
         .then((r) => r.json())

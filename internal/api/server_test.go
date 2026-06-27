@@ -217,6 +217,17 @@ func TestStreamGating(t *testing.T) {
 	if got := get(withToken, "Bearer nope"); got != http.StatusUnauthorized {
 		t.Fatalf("wrong token: status = %d, want 401", got)
 	}
+
+	// A wrong ?token= query param (the EventSource path) is also rejected.
+	req := httptest.NewRequest(http.MethodGet, "/api/stream?token=nope", nil)
+	resp, err := withToken.App().Test(req)
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong query token: status = %d, want 401", resp.StatusCode)
+	}
 }
 
 func TestWebhookRateLimitPerClient(t *testing.T) {
