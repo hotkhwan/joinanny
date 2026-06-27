@@ -7,29 +7,58 @@ import (
 	"testing"
 )
 
-// memRepo is an in-memory CredentialRepository for network-free tests. It also
-// lets tests inspect exactly what would be persisted at rest.
+// memRepo is an in-memory CredentialRepository for network-free tests, keyed by
+// (user, profile). It also lets tests inspect what would be persisted at rest.
 type memRepo struct {
-	saved map[string]BinanceCredential
+	saved map[string][]BinanceCredential // userID -> profiles
 }
 
-func newMemRepo() *memRepo { return &memRepo{saved: map[string]BinanceCredential{}} }
+func newMemRepo() *memRepo { return &memRepo{saved: map[string][]BinanceCredential{}} }
 
 func (r *memRepo) Save(_ context.Context, cred BinanceCredential) error {
-	r.saved[cred.UserID] = cred
+	list := r.saved[cred.UserID]
+	for i := range list {
+		if list[i].Profile == cred.Profile {
+			list[i] = cred
+			r.saved[cred.UserID] = list
+			return nil
+		}
+	}
+	r.saved[cred.UserID] = append(list, cred)
 	return nil
 }
 
-func (r *memRepo) Find(_ context.Context, userID string) (BinanceCredential, error) {
-	cred, ok := r.saved[userID]
-	if !ok {
-		return BinanceCredential{}, ErrNoCredential
-	}
-	return cred, nil
+func (r *memRepo) List(_ context.Context, userID string) ([]BinanceCredential, error) {
+	return r.saved[userID], nil
 }
 
-func (r *memRepo) Remove(_ context.Context, userID string) error {
-	delete(r.saved, userID)
+func (r *memRepo) FindActive(_ context.Context, userID string) (BinanceCredential, error) {
+	for _, c := range r.saved[userID] {
+		if c.Active {
+			return c, nil
+		}
+	}
+	return BinanceCredential{}, ErrNoCredential
+}
+
+func (r *memRepo) Remove(_ context.Context, userID, profile string) error {
+	list := r.saved[userID]
+	out := list[:0]
+	for _, c := range list {
+		if c.Profile != profile {
+			out = append(out, c)
+		}
+	}
+	r.saved[userID] = out
+	return nil
+}
+
+func (r *memRepo) SetActive(_ context.Context, userID, profile string) error {
+	list := r.saved[userID]
+	for i := range list {
+		list[i].Active = list[i].Profile == profile
+	}
+	r.saved[userID] = list
 	return nil
 }
 
@@ -51,7 +80,6 @@ func TestCredentialStoreLoadRoundTrip(t *testing.T) {
 	if err := svc.Store(ctx, "42", want); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-
 	got, err := svc.Load(ctx, "42")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -64,12 +92,11 @@ func TestCredentialStoreLoadRoundTrip(t *testing.T) {
 func TestCredentialStoredEncryptedAtRest(t *testing.T) {
 	svc, repo := newTestService(t)
 	keys := BinanceKeys{APIKey: "pubkey-plain", APISecret: "secret-plain"}
-
 	if err := svc.Store(context.Background(), "7", keys); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 
-	cred := repo.saved["7"]
+	cred := repo.saved["7"][0]
 	if cred.APIKey.IsZero() || cred.APISecret.IsZero() {
 		t.Fatal("credential stored without sealed key material")
 	}
@@ -81,12 +108,61 @@ func TestCredentialStoredEncryptedAtRest(t *testing.T) {
 	}
 }
 
-func TestCredentialStoreValidatesInput(t *testing.T) {
+func TestCredentialMultiProfile(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 
+	// First profile becomes active automatically.
+	if err := svc.StoreProfile(ctx, "9", "testnet", BinanceKeys{APIKey: "tk-aaaa", APISecret: "ts", Testnet: true}); err != nil {
+		t.Fatalf("store testnet: %v", err)
+	}
+	if err := svc.StoreProfile(ctx, "9", "live", BinanceKeys{APIKey: "lk-bbbb", APISecret: "ls"}); err != nil {
+		t.Fatalf("store live: %v", err)
+	}
+
+	profiles, err := svc.Profiles(ctx, "9")
+	if err != nil || len(profiles) != 2 {
+		t.Fatalf("profiles = %+v (err %v), want 2", profiles, err)
+	}
+	// testnet is active and masks its key tail.
+	for _, p := range profiles {
+		if p.Profile == "testnet" {
+			if !p.Active || p.APIKeyTail != "…aaaa" {
+				t.Fatalf("testnet profile = %+v, want active with masked tail", p)
+			}
+		}
+		if p.Profile == "live" && p.Active {
+			t.Fatal("live should not be active yet")
+		}
+	}
+
+	// Active load returns the testnet key.
+	if got, _ := svc.Load(ctx, "9"); got.APIKey != "tk-aaaa" {
+		t.Fatalf("active key = %q, want tk-aaaa", got.APIKey)
+	}
+
+	// Switch active to live.
+	if err := svc.SetActive(ctx, "9", "live"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	if got, _ := svc.Load(ctx, "9"); got.APIKey != "lk-bbbb" {
+		t.Fatalf("after switch active key = %q, want lk-bbbb", got.APIKey)
+	}
+
+	// Deleting the active profile promotes the remaining one.
+	if err := svc.DeleteProfile(ctx, "9", "live"); err != nil {
+		t.Fatalf("DeleteProfile: %v", err)
+	}
+	if got, _ := svc.Load(ctx, "9"); got.APIKey != "tk-aaaa" {
+		t.Fatalf("after delete active key = %q, want tk-aaaa (promoted)", got.APIKey)
+	}
+}
+
+func TestCredentialStoreValidatesInput(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
 	if err := svc.Store(ctx, "", BinanceKeys{APIKey: "k", APISecret: "s"}); err == nil {
-		t.Fatal("Store accepted a non-positive user id")
+		t.Fatal("Store accepted a blank user id")
 	}
 	if err := svc.Store(ctx, "1", BinanceKeys{APIKey: "  ", APISecret: "s"}); err == nil {
 		t.Fatal("Store accepted a blank api key")
@@ -95,9 +171,7 @@ func TestCredentialStoreValidatesInput(t *testing.T) {
 
 func TestCredentialLoadMissingReturnsSentinel(t *testing.T) {
 	svc, _ := newTestService(t)
-
-	_, err := svc.Load(context.Background(), "999")
-	if !errors.Is(err, ErrNoCredential) {
+	if _, err := svc.Load(context.Background(), "999"); !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("Load error = %v, want ErrNoCredential", err)
 	}
 }
@@ -105,7 +179,6 @@ func TestCredentialLoadMissingReturnsSentinel(t *testing.T) {
 func TestCredentialDelete(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
-
 	if err := svc.Store(ctx, "5", BinanceKeys{APIKey: "k", APISecret: "s"}); err != nil {
 		t.Fatalf("Store: %v", err)
 	}

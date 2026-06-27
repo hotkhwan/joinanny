@@ -479,21 +479,49 @@ func TestRegisterAndLogin(t *testing.T) {
 }
 
 type memCredRepo struct {
-	m map[string]auth.BinanceCredential
+	m map[string][]auth.BinanceCredential
 }
 
 func (r *memCredRepo) Save(_ context.Context, c auth.BinanceCredential) error {
-	r.m[c.UserID] = c
+	list := r.m[c.UserID]
+	for i := range list {
+		if list[i].Profile == c.Profile {
+			list[i] = c
+			r.m[c.UserID] = list
+			return nil
+		}
+	}
+	r.m[c.UserID] = append(list, c)
 	return nil
 }
-func (r *memCredRepo) Find(_ context.Context, id string) (auth.BinanceCredential, error) {
-	c, ok := r.m[id]
-	if !ok {
-		return auth.BinanceCredential{}, auth.ErrNoCredential
-	}
-	return c, nil
+func (r *memCredRepo) List(_ context.Context, id string) ([]auth.BinanceCredential, error) {
+	return r.m[id], nil
 }
-func (r *memCredRepo) Remove(_ context.Context, id string) error { delete(r.m, id); return nil }
+func (r *memCredRepo) FindActive(_ context.Context, id string) (auth.BinanceCredential, error) {
+	for _, c := range r.m[id] {
+		if c.Active {
+			return c, nil
+		}
+	}
+	return auth.BinanceCredential{}, auth.ErrNoCredential
+}
+func (r *memCredRepo) Remove(_ context.Context, id, profile string) error {
+	list := r.m[id]
+	out := list[:0]
+	for _, c := range list {
+		if c.Profile != profile {
+			out = append(out, c)
+		}
+	}
+	r.m[id] = out
+	return nil
+}
+func (r *memCredRepo) SetActive(_ context.Context, id, profile string) error {
+	for i := range r.m[id] {
+		r.m[id][i].Active = r.m[id][i].Profile == profile
+	}
+	return nil
+}
 
 func TestCredentialEndpoints(t *testing.T) {
 	userSvc, _ := users.NewService(users.NewMemoryRepository())
@@ -502,7 +530,7 @@ func TestCredentialEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	credSvc, _ := auth.NewCredentialService(keyring, &memCredRepo{m: map[string]auth.BinanceCredential{}})
+	credSvc, _ := auth.NewCredentialService(keyring, &memCredRepo{m: map[string][]auth.BinanceCredential{}})
 	server := NewServer(testConfig(), nil, testLogger(), WithUsers(userSvc), WithTokenizer(tk), WithCredentials(credSvc))
 
 	do := func(method, path, token, payload string) (int, []byte) {
@@ -536,16 +564,28 @@ func TestCredentialEndpoints(t *testing.T) {
 	if status, _ := do(http.MethodGet, "/api/credentials", token, ""); status != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200", status)
 	}
-	if status, _ := do(http.MethodPost, "/api/credentials", token, `{"api_key":"pubkey-abcd","api_secret":"secret-xyz","testnet":true}`); status != http.StatusCreated {
+	if status, _ := do(http.MethodPost, "/api/credentials", token, `{"profile":"testnet","api_key":"pubkey-abcd","api_secret":"secret-xyz","testnet":true}`); status != http.StatusCreated {
 		t.Fatalf("POST status = %d, want 201", status)
 	}
 	status, body := do(http.MethodGet, "/api/credentials", token, "")
 	if status != http.StatusOK {
 		t.Fatalf("GET after store = %d", status)
 	}
-	// Must report configured + masked tail, never the secret.
-	if !bytes.Contains(body, []byte(`"configured":true`)) || bytes.Contains(body, []byte("secret-xyz")) || bytes.Contains(body, []byte("pubkey-abcd")) {
+	// Lists the profile (active, masked tail), never the secret or full key.
+	if !bytes.Contains(body, []byte(`"profiles"`)) || !bytes.Contains(body, []byte(`"active":true`)) ||
+		bytes.Contains(body, []byte("secret-xyz")) || bytes.Contains(body, []byte("pubkey-abcd")) {
 		t.Fatalf("credential GET leaked or wrong: %s", body)
+	}
+
+	// Add a second profile, switch active to it.
+	if status, _ := do(http.MethodPost, "/api/credentials", token, `{"profile":"live","api_key":"livekey-9999","api_secret":"livesec"}`); status != http.StatusCreated {
+		t.Fatalf("POST live status = %d, want 201", status)
+	}
+	if status, _ := do(http.MethodPost, "/api/credentials/active", token, `{"profile":"live"}`); status != http.StatusOK {
+		t.Fatalf("set-active status = %d, want 200", status)
+	}
+	if status, _ := do(http.MethodDelete, "/api/credentials?profile=live", token, ""); status != http.StatusOK {
+		t.Fatalf("delete profile status = %d, want 200", status)
 	}
 }
 

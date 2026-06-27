@@ -173,6 +173,7 @@ func (s *Server) routes() {
 	s.app.Post("/api/confirm", s.requireAuth, s.handleConfirm)
 	s.app.Post("/api/credentials", s.requireAuth, s.handleStoreCredential)
 	s.app.Get("/api/credentials", s.requireAuth, s.handleGetCredential)
+	s.app.Post("/api/credentials/active", s.requireAuth, s.handleSetActiveCredential)
 	s.app.Delete("/api/credentials", s.requireAuth, s.handleDeleteCredential)
 
 	// Rate-limit the public webhook: it is the only internet-reachable path that
@@ -356,6 +357,7 @@ func (s *Server) handleReport(c fiber.Ctx) error {
 }
 
 type credentialBody struct {
+	Profile   string `json:"profile"`
 	APIKey    string `json:"api_key"`
 	APISecret string `json:"api_secret"`
 	Testnet   bool   `json:"testnet"`
@@ -369,7 +371,7 @@ func (s *Server) handleStoreCredential(c fiber.Ctx) error {
 	if err := json.Unmarshal(c.Body(), &body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
 	}
-	err := s.credentials.Store(c.Context(), claimsOf(c).Subject, auth.BinanceKeys{
+	err := s.credentials.StoreProfile(c.Context(), claimsOf(c).Subject, body.Profile, auth.BinanceKeys{
 		APIKey:    body.APIKey,
 		APISecret: body.APISecret,
 		Testnet:   body.Testnet,
@@ -377,32 +379,50 @@ func (s *Server) handleStoreCredential(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"configured": true, "testnet": body.Testnet})
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"saved": true})
 }
 
+// handleGetCredential lists the user's key profiles (never secrets).
 func (s *Server) handleGetCredential(c fiber.Ctx) error {
 	if s.credentials == nil {
 		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
 	}
-	keys, err := s.credentials.Load(c.Context(), claimsOf(c).Subject)
-	if errors.Is(err, auth.ErrNoCredential) {
-		return c.JSON(fiber.Map{"configured": false})
-	}
+	profiles, err := s.credentials.Profiles(c.Context(), claimsOf(c).Subject)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read credential"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read credentials"})
 	}
-	// Never return the secret — only that it is set, plus the masked key tail.
-	return c.JSON(fiber.Map{"configured": true, "testnet": keys.Testnet, "api_key_tail": maskTail(keys.APIKey)})
+	return c.JSON(fiber.Map{"profiles": profiles})
+}
+
+// handleSetActiveCredential makes a profile the one trades run on.
+func (s *Server) handleSetActiveCredential(c fiber.Ctx) error {
+	if s.credentials == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
+	}
+	var body struct {
+		Profile string `json:"profile"`
+	}
+	if err := json.Unmarshal(c.Body(), &body); err != nil || strings.TrimSpace(body.Profile) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "profile is required"})
+	}
+	if err := s.credentials.SetActive(c.Context(), claimsOf(c).Subject, body.Profile); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not set active profile"})
+	}
+	return c.JSON(fiber.Map{"active": body.Profile})
 }
 
 func (s *Server) handleDeleteCredential(c fiber.Ctx) error {
 	if s.credentials == nil {
 		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
 	}
-	if err := s.credentials.Delete(c.Context(), claimsOf(c).Subject); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not delete credential"})
+	profile := strings.TrimSpace(c.Query("profile"))
+	if profile == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "profile query param is required"})
 	}
-	return c.JSON(fiber.Map{"configured": false})
+	if err := s.credentials.DeleteProfile(c.Context(), claimsOf(c).Subject, profile); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not delete profile"})
+	}
+	return c.JSON(fiber.Map{"deleted": profile})
 }
 
 func maskTail(s string) string {

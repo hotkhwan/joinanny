@@ -15,7 +15,14 @@
       .row:last-child { border-bottom: 0; }
       code { font-size: 0.85rem; }
       label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.2rem; color: #888; }
-      input { width: 100%; box-sizing: border-box; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      input, select { width: 100%; box-sizing: border-box; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      .profile { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
+      .profile .name { font-weight: 600; }
+      .badge { font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: #8882; }
+      .badge.live { background: #f59e0b33; color: #f59e0b; }
+      .badge.active { background: #22c55e33; color: #16a34a; }
+      .profile .spacer { flex: 1; }
+      .profile button { flex: 0 0 auto; width: auto; padding: 0.3rem 0.6rem; font-size: 0.78rem; }
       .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
       button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
       button.primary { background: #3b82f6; color: #fff; }
@@ -57,15 +64,21 @@
       </section>
 
       <section class="card" id="keysCard" style="display:none">
-        <strong>Binance API key (testnet)</strong>
-        <p style="margin:0.3rem 0 0">Get one at Binance → API Management → enable <b>Futures</b>, disable <b>Withdrawals</b>. <span id="keyStatus"></span></p>
-        <label for="apiKey">API key</label>
-        <input id="apiKey" autocomplete="off" />
-        <label for="apiSecret">API secret</label>
-        <input id="apiSecret" type="password" autocomplete="off" />
+        <strong>Binance API keys</strong>
+        <p style="margin:0.3rem 0 0.6rem">Add up to a few profiles (e.g. testnet, live) and pick which is active. Enable <b>Futures</b>, disable <b>Withdrawals</b>.</p>
+        <div id="profiles"></div>
+        <label for="profName">Add / update a profile</label>
+        <div class="cmdrow">
+          <input id="profName" placeholder="name (e.g. testnet)" autocomplete="off" />
+          <select id="profNet" style="flex:0 0 auto;width:7rem">
+            <option value="true">testnet</option>
+            <option value="false">live</option>
+          </select>
+        </div>
+        <input id="apiKey" placeholder="API key" autocomplete="off" />
+        <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" />
         <div class="actions">
-          <button class="primary" id="saveKey">Save key</button>
-          <button class="ghost" id="delKey">Remove</button>
+          <button class="primary" id="saveKey">Save profile</button>
         </div>
         <div class="msg" id="keyMsg"></div>
       </section>
@@ -145,14 +158,34 @@
         el.textContent = text;
         el.style.color = ok ? "#16a34a" : "#dc2626";
       }
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
       async function refreshKeyStatus() {
         try {
           const r = await fetch("/api/credentials", { headers: authHeaders() });
           const d = await r.json();
-          document.getElementById("keyStatus").textContent = d.configured
-            ? `Configured (${d.api_key_tail || "set"}${d.testnet ? ", testnet" : ""}).`
-            : "Not configured yet.";
+          const list = d.profiles || [];
+          const box = document.getElementById("profiles");
+          if (!list.length) { box.innerHTML = '<p style="color:#888">No profiles yet — add one below.</p>'; return; }
+          box.innerHTML = list
+            .map((p) => {
+              const net = p.testnet ? '<span class="badge">testnet</span>' : '<span class="badge live">live</span>';
+              const active = p.active ? '<span class="badge active">active</span>' : `<button class="ghost" data-active="${escapeHtml(p.profile)}">Make active</button>`;
+              return `<div class="profile"><span class="name">${escapeHtml(p.profile)}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
+            })
+            .join("");
+          box.querySelectorAll("[data-active]").forEach((b) => (b.onclick = () => setActive(b.dataset.active)));
+          box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => removeProfile(b.dataset.del)));
         } catch (e) {}
+      }
+      async function setActive(profile) {
+        await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) });
+        refreshKeyStatus();
+      }
+      async function removeProfile(profile) {
+        await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() });
+        refreshKeyStatus();
       }
       function onAuthed() {
         document.getElementById("authCard").style.display = "none";
@@ -259,20 +292,18 @@
         })
         .catch(() => {});
       document.getElementById("saveKey").onclick = async () => {
+        const profile = document.getElementById("profName").value.trim() || "default";
         const body = JSON.stringify({
+          profile,
           api_key: document.getElementById("apiKey").value,
           api_secret: document.getElementById("apiSecret").value,
-          testnet: true,
+          testnet: document.getElementById("profNet").value === "true",
         });
         const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(), body });
         const d = await r.json().catch(() => ({}));
-        keyMsg(r.ok ? "Saved." : d.error || "Failed", r.ok);
+        keyMsg(r.ok ? `Saved profile "${profile}".` : d.error || "Failed", r.ok);
+        document.getElementById("apiKey").value = "";
         document.getElementById("apiSecret").value = "";
-        refreshKeyStatus();
-      };
-      document.getElementById("delKey").onclick = async () => {
-        const r = await fetch("/api/credentials", { method: "DELETE", headers: authHeaders() });
-        keyMsg(r.ok ? "Removed." : "Failed", r.ok);
         refreshKeyStatus();
       };
 

@@ -195,9 +195,12 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 		return fmt.Errorf("create journal indexes: %w", err)
 	}
 
+	// Multi-profile: uniqueness is now per (user_id, profile). Drop the old
+	// user_id-only unique index if it exists (best-effort, ignore "not found").
+	_ = s.credentials.Indexes().DropOne(ctx, "credential_user_unique")
 	_, err = s.credentials.Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "user_id", Value: 1}},
-		Options: options.Index().SetName("credential_user_unique").SetUnique(true),
+		Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "profile", Value: 1}},
+		Options: options.Index().SetName("credential_user_profile_unique").SetUnique(true),
 	})
 	if err != nil {
 		return fmt.Errorf("create credential indexes: %w", err)

@@ -41,19 +41,23 @@ func NewExecutorProvider(base ExecutorConfig, loader CredentialLoader, logger *s
 // ExecutorFor returns the user's executor and true, or (nil, false) when the
 // user has no stored credential — so the caller falls back to the default.
 func (p *ExecutorProvider) ExecutorFor(ctx context.Context, userKey string) (orders.Executor, bool, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if executor, ok := p.cache[userKey]; ok {
-		return executor, true, nil
-	}
-
+	// Load first so the cache reflects the user's *active* profile: switching
+	// profiles changes the API key, which changes the cache key, so a stale
+	// executor is never returned after a profile switch.
 	keys, err := p.loader.Load(ctx, userKey)
 	if errors.Is(err, auth.ErrNoCredential) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
+	}
+
+	cacheKey := userKey + "|" + keys.APIKey
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if executor, ok := p.cache[cacheKey]; ok {
+		return executor, true, nil
 	}
 
 	cfg := p.base
@@ -65,6 +69,6 @@ func (p *ExecutorProvider) ExecutorFor(ctx context.Context, userKey string) (ord
 	cfg.RealTradingEnabled = p.base.RealTradingEnabled
 
 	executor := NewExecutor(cfg, p.logger)
-	p.cache[userKey] = executor
+	p.cache[cacheKey] = executor
 	return executor, true, nil
 }
