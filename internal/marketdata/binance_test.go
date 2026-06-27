@@ -28,6 +28,9 @@ func newStubBinance(t *testing.T) *BinanceProvider {
 	mux.HandleFunc("/futures/data/takerlongshortRatio", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"buySellRatio":"1.2","buyVol":"1000","sellVol":"833","timestamp":1699999000000}]`))
 	})
+	mux.HandleFunc("/fapi/v1/ticker/24hr", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"symbol":"BTCUSDT","lastPrice":"68000.5","priceChangePercent":"1.25"},{"symbol":"ETHUSDT","lastPrice":"3550.10","priceChangePercent":"-2.40"}]`))
+	})
 	mux.HandleFunc("/fapi/v1/klines", func(w http.ResponseWriter, _ *http.Request) {
 		// [openTime, open, high, low, close, volume, ...]
 		_, _ = w.Write([]byte(`[[1,"10","11","9","10.5","100",2],[2,"10.5","12","10","11.0","120",3],[3,"11","13","10","12.25","150",4]]`))
@@ -48,6 +51,34 @@ func TestBinanceProviderFunding(t *testing.T) {
 	}
 	if funding.NextFundingTime.IsZero() {
 		t.Fatal("next funding time not parsed")
+	}
+}
+
+func TestBinanceProviderTickers(t *testing.T) {
+	p := newStubBinance(t)
+	// case-insensitive symbol input, and an unknown symbol is omitted.
+	got, err := p.Tickers(context.Background(), []string{"btcusdt", "DOGEUSDT"})
+	if err != nil {
+		t.Fatalf("Tickers: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 ticker, got %d: %+v", len(got), got)
+	}
+	btc, ok := got["BTCUSDT"]
+	if !ok {
+		t.Fatalf("BTCUSDT missing: %+v", got)
+	}
+	if btc.LastPrice.String() != "68000.5" || btc.PriceChangePct.String() != "1.25" {
+		t.Fatalf("BTCUSDT ticker = %+v", btc)
+	}
+
+	// Empty input returns every ticker.
+	all, err := p.Tickers(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Tickers(all): %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("want 2 tickers, got %d", len(all))
 	}
 }
 

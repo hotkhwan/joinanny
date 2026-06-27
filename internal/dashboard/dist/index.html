@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Aliza · Trading</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-      :root { color-scheme: light dark; }
+      :root { color-scheme: light dark; --accent: #3b82f6; }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
       main { max-width: 40rem; margin: 0 auto; padding: 0 1rem 3rem; }
@@ -17,7 +18,7 @@
       .who img { width: 1.8rem; height: 1.8rem; border-radius: 50%; object-fit: cover; }
       .nav { display: flex; gap: 0.4rem; position: sticky; top: 0; padding: 0.5rem 0; background: Canvas; z-index: 5; }
       .nav button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.6rem; background: #8881; color: inherit; font-weight: 600; cursor: pointer; }
-      .nav button.on { background: #3b82f6; color: #fff; }
+      .nav button.on { background: var(--accent); color: #fff; }
       .card { margin-top: 1rem; border: 1px solid #8883; border-radius: 0.75rem; padding: 1rem 1.1rem; }
       .row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #8881; }
       .row:last-child { border-bottom: 0; }
@@ -25,7 +26,7 @@
       input, select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
       .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
       button { padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
-      button.primary { background: #3b82f6; color: #fff; flex: 1; }
+      button.primary { background: var(--accent); color: #fff; flex: 1; }
       button.ghost { background: #8882; color: inherit; flex: 1; }
       .msg { margin-top: 0.7rem; font-size: 0.85rem; min-height: 1.1rem; }
       .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -46,6 +47,21 @@
       .coincard .pos { color: #16a34a; }
       .coincard .neg { color: #dc2626; }
       .coincard .sub { display: flex; gap: 1.2rem; color: #888; font-size: 0.8rem; margin-top: 0.3rem; }
+      .ticket { display: grid; gap: 0.55rem; }
+      .ticket label { margin-top: 0; }
+      .side { display: flex; gap: 0.5rem; }
+      .side button { flex: 1; padding: 0.6rem; font-weight: 700; background: #8882; color: inherit; border: 1px solid transparent; }
+      .side button.long.on { background: #16a34a; color: #fff; }
+      .side button.short.on { background: #dc2626; color: #fff; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+      .lev { display: flex; align-items: center; gap: 0.6rem; }
+      .lev input[type="range"] { flex: 1; accent-color: var(--accent); }
+      .fav { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
+      .fav .sym { font-weight: 600; cursor: pointer; }
+      .fav .px { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.15; }
+      .fav .px .chg { font-size: 0.72rem; }
+      .fav .iconbtn { flex: 0 0 auto; width: auto; padding: 0.3rem 0.5rem; background: #8882; color: inherit; font-weight: 600; }
+      .up { color: #16a34a; } .down { color: #dc2626; }
       .hidden { display: none; }
     </style>
   </head>
@@ -93,8 +109,45 @@
       <!-- ORDERS -->
       <section id="view-orders" class="hidden">
         <div class="card">
-          <strong>New order &amp; commands</strong>
-          <p style="margin:0.3rem 0 0.6rem">Type a command or trade; trades ask to Confirm first.</p>
+          <strong>Open position</strong>
+          <p style="margin:0.3rem 0 0.6rem">Pick a side, size and levels — you'll Confirm before anything places.</p>
+          <div class="ticket">
+            <div class="side">
+              <button type="button" class="long on" id="side-long">Long / Buy</button>
+              <button type="button" class="short" id="side-short">Short / Sell</button>
+            </div>
+            <div>
+              <label for="t-sym">Symbol</label>
+              <div class="cmdrow">
+                <input id="t-sym" placeholder="BTC" autocomplete="off" />
+                <button class="ghost" id="t-last" type="button" style="flex:0 0 auto;width:auto;white-space:nowrap">Last <span id="t-px">—</span></button>
+              </div>
+            </div>
+            <div>
+              <label>Leverage <span id="t-levval" style="color:inherit;font-weight:700">3x</span></label>
+              <div class="lev"><input type="range" id="t-lev" min="1" max="20" value="3" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="t-size">Size (USDT)</label><input id="t-size" inputmode="decimal" placeholder="100" autocomplete="off" /></div>
+              <div><label for="t-entry">Entry price</label><input id="t-entry" inputmode="decimal" placeholder="tap Last" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="t-sl">Stop loss</label><input id="t-sl" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
+              <div><label for="t-tp">Take profit</label><input id="t-tp" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
+            </div>
+            <div class="chips">
+              <button class="chip" type="button" data-risk="1">SL/TP 1% / 2%</button>
+              <button class="chip" type="button" data-risk="2">2% / 4%</button>
+              <button class="chip" type="button" data-risk="5">5% / 10%</button>
+            </div>
+            <button class="primary" id="t-review" type="button">Review order</button>
+            <div class="msg" id="t-msg"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <strong>Commands</strong>
+          <p style="margin:0.3rem 0 0.6rem">Market data, goals, backtest, close — trades ask to Confirm first.</p>
           <div class="chips" style="margin-bottom:0.6rem">
             <button class="chip" data-cmd="market BTC">market BTC</button>
             <button class="chip" data-cmd="goal profit 10 risk 50">goal</button>
@@ -164,6 +217,19 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
+      // Telegram Mini App handle — non-null only inside Telegram, where the
+      // launch sets a non-empty initData. On the plain website the SDK still
+      // loads but initData is "", so this stays null and the web flow runs.
+      const tgApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData ? window.Telegram.WebApp : null;
+      const inMiniApp = !!tgApp;
+      function applyTgTheme(tg) {
+        const tp = tg.themeParams || {};
+        if (tp.bg_color) document.body.style.background = tp.bg_color;
+        if (tp.text_color) document.body.style.color = tp.text_color;
+        if (tp.button_color) document.documentElement.style.setProperty("--accent", tp.button_color);
+        try { document.documentElement.style.colorScheme = tg.colorScheme || "dark"; } catch (_) {}
+        try { tg.setHeaderColor && tg.setHeaderColor(tp.bg_color || "#000000"); } catch (_) {}
+      }
       function authHeaders() {
         const t = localStorage.getItem("token");
         return t ? { Authorization: "Bearer " + t, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
@@ -182,6 +248,7 @@
         ["orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
         if (name === "history") loadHistory();
+        if (tgApp && tgApp.BackButton) { name === "orders" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
       }
       function navigate(view) {
         const path = "/" + (view === "orders" ? "orders" : view);
@@ -206,12 +273,14 @@
         refreshKeyStatus();
         connectStream();
         renderFavs();
+        startPricePolling();
         loadStatus();
       }
       $("logout").onclick = () => {
         localStorage.removeItem("token");
         localStorage.removeItem("profile");
         if (stream) { stream.close(); stream = null; }
+        stopPricePolling();
         $("nav").classList.add("hidden");
         $("logout").classList.add("hidden");
         $("who").classList.add("hidden");
@@ -319,9 +388,31 @@
       $("cmd-no").onclick = () => resolveConfirm(true);
       document.querySelectorAll(".chip[data-cmd]").forEach((c) => (c.onclick = () => { cmdInput.value = c.dataset.cmd; runCommand(c.dataset.cmd); }));
 
+      // ---- live prices ----
+      let priceCache = {}, priceTimer = null;
+      function normSym(v) { let s = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); if (!s) return ""; if (!s.endsWith("USDT")) s += "USDT"; return s; }
+      function formatPrice(v) { const n = Number(v); if (!isFinite(n)) return String(v); if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 1 }); if (n >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 3 }); return n.toPrecision(4); }
+      function trimNum(n) { return Number(Number(n).toPrecision(6)).toString(); }
+      async function loadPrices(symbols) {
+        const list = [...new Set(symbols.map(normSym).filter(Boolean))];
+        if (!list.length) return priceCache;
+        try {
+          const d = await (await fetch("/api/prices?symbols=" + encodeURIComponent(list.join(",")), { headers: authHeaders() })).json();
+          Object.assign(priceCache, d.prices || {});
+        } catch (_) {}
+        return priceCache;
+      }
+      function startPricePolling() {
+        if (priceTimer) return;
+        const tick = async () => { await loadPrices([...getFavs(), $("t-sym").value]); renderFavs(); updateTicketPrice(); };
+        tick();
+        priceTimer = setInterval(tick, 10000);
+      }
+      function stopPricePolling() { if (priceTimer) { clearInterval(priceTimer); priceTimer = null; } }
+
       // ---- coins / favourites ----
       function getFavs() { try { return JSON.parse(localStorage.getItem("favs") || "[]"); } catch (_) { return []; } }
-      function saveFavs(f) { localStorage.setItem("favs", JSON.stringify(f)); renderFavs(); }
+      function saveFavs(f) { localStorage.setItem("favs", JSON.stringify(f)); renderFavs(); loadPrices(f).then(renderFavs); }
       function addFav(s) { const f = getFavs(); if (!f.includes(s)) { f.push(s); saveFavs(f); } }
       function removeFav(s) { saveFavs(getFavs().filter((x) => x !== s)); }
       function moveFav(i, d) { const f = getFavs(), j = i + d; if (j < 0 || j >= f.length) return; [f[i], f[j]] = [f[j], f[i]]; saveFavs(f); }
@@ -329,8 +420,15 @@
         const f = getFavs(), box = $("favs");
         if (!box) return;
         if (!f.length) { box.innerHTML = '<p style="font-size:0.85rem">No favourites yet — search above and tap ☆.</p>'; return; }
-        box.innerHTML = f.map((s, i) => `<div class="profile"><span class="name" data-coin="${s}" style="cursor:pointer">${s}</span><span class="spacer"></span><button class="ghost" data-up="${i}">↑</button><button class="ghost" data-down="${i}">↓</button><button class="ghost" data-rm="${s}">✕</button></div>`).join("");
-        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => { cmdInput.value = "market " + b.dataset.coin; showView("orders"); runCommand(cmdInput.value); }));
+        box.innerHTML = f.map((s, i) => {
+          const t = priceCache[normSym(s)];
+          const chg = t ? Number(t.price_change_pct) : null;
+          const cls = chg == null ? "" : chg >= 0 ? "up" : "down";
+          const chgTxt = chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
+          const px = t ? `<div>${formatPrice(t.last_price)}</div><div class="chg ${cls}">${chgTxt}</div>` : "<div>…</div>";
+          return `<div class="fav"><span class="sym" data-coin="${s}">${s}</span><span class="px">${px}</span><button class="iconbtn" data-up="${i}" title="Move up">↑</button><button class="iconbtn" data-down="${i}" title="Move down">↓</button><button class="iconbtn" data-rm="${s}" title="Remove">✕</button></div>`;
+        }).join("");
+        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => loadIntoTicket(b.dataset.coin)));
         box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.up, -1)));
         box.querySelectorAll("[data-down]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.down, 1)));
         box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => removeFav(b.dataset.rm)));
@@ -345,6 +443,60 @@
           box.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => addFav(b.dataset.add)));
         }, 250);
       });
+
+      // ---- order ticket ----
+      let ticketSide = "long";
+      function ticketMsg(t, ok) { $("t-msg").textContent = t || ""; $("t-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function setSide(s) { ticketSide = s; $("side-long").classList.toggle("on", s === "long"); $("side-short").classList.toggle("on", s === "short"); }
+      function updateTicketPrice() {
+        const t = priceCache[normSym($("t-sym").value)];
+        if (!t) { $("t-px").textContent = "—"; return; }
+        const chg = Number(t.price_change_pct);
+        $("t-px").textContent = formatPrice(t.last_price) + (isFinite(chg) ? ` (${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%)` : "");
+      }
+      async function loadIntoTicket(coin) {
+        $("t-sym").value = String(coin).replace(/USDT$/, "");
+        navigate("orders");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        await loadPrices([coin]); updateTicketPrice();
+        const t = priceCache[normSym(coin)];
+        if (t && !$("t-entry").value) $("t-entry").value = trimNum(t.last_price);
+      }
+      $("side-long").onclick = () => setSide("long");
+      $("side-short").onclick = () => setSide("short");
+      $("t-lev").addEventListener("input", (e) => ($("t-levval").textContent = e.target.value + "x"));
+      let tSymTimer = null;
+      $("t-sym").addEventListener("input", () => {
+        clearTimeout(tSymTimer);
+        tSymTimer = setTimeout(async () => { if (normSym($("t-sym").value)) { await loadPrices([$("t-sym").value]); updateTicketPrice(); } }, 350);
+      });
+      $("t-last").onclick = async () => {
+        const sym = normSym($("t-sym").value); if (!sym) { ticketMsg("Enter a symbol first."); return; }
+        await loadPrices([sym]); const t = priceCache[sym];
+        if (t) { $("t-entry").value = trimNum(t.last_price); ticketMsg(""); } else ticketMsg("No price for that symbol.");
+        updateTicketPrice();
+      };
+      document.querySelectorAll("[data-risk]").forEach((b) => (b.onclick = async () => {
+        let entry = Number($("t-entry").value);
+        if (!entry) { const sym = normSym($("t-sym").value); await loadPrices([sym]); const t = priceCache[sym]; if (t) { entry = Number(t.last_price); $("t-entry").value = trimNum(entry); } }
+        if (!entry) { ticketMsg("Set an entry price (or tap Last) first."); return; }
+        const slPct = Number(b.dataset.risk) / 100, tpPct = slPct * 2;
+        if (ticketSide === "long") { $("t-sl").value = trimNum(entry * (1 - slPct)); $("t-tp").value = trimNum(entry * (1 + tpPct)); }
+        else { $("t-sl").value = trimNum(entry * (1 + slPct)); $("t-tp").value = trimNum(entry * (1 - tpPct)); }
+        ticketMsg("");
+      }));
+      $("t-review").onclick = async () => {
+        const sym = $("t-sym").value.trim(); if (!sym) return ticketMsg("Enter a symbol.");
+        const size = $("t-size").value.trim(); if (!size) return ticketMsg("Enter a size in USDT.");
+        let entry = $("t-entry").value.trim();
+        if (!entry) { await loadPrices([sym]); const t = priceCache[normSym(sym)]; if (t) entry = trimNum(t.last_price); }
+        if (!entry) return ticketMsg("Enter an entry price (or tap Last).");
+        const sl = $("t-sl").value.trim(), tp = $("t-tp").value.trim();
+        if (!sl || !tp) return ticketMsg("Enter stop loss and take profit (or tap a % preset).");
+        const cmd = `${ticketSide} ${sym} ${$("t-lev").value}x entry ${entry} sl ${sl} tp ${tp} size ${size}usdt`;
+        ticketMsg(""); cmdInput.value = cmd; runCommand(cmd);
+        $("cmd-out").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
 
       // ---- history ----
       async function loadHistory() {
@@ -393,9 +545,32 @@
         } catch (e) {}
       }
 
+      // ---- Telegram Mini App ----
+      async function tryMiniAppLogin() {
+        if (!inMiniApp) return false;
+        try {
+          const r = await fetch("/api/telegram-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ init_data: tgApp.initData }) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) {
+            localStorage.setItem("token", d.token);
+            const u = (tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) || {};
+            onAuthed({ name: u.username || u.first_name || "trader", photo: u.photo_url });
+            return true;
+          }
+          $("tgMsg").textContent = d.error || "Telegram login failed";
+        } catch (_) {}
+        return false;
+      }
+
       // ---- boot ----
+      if (tgApp) {
+        try { tgApp.ready(); tgApp.expand(); } catch (_) {}
+        applyTgTheme(tgApp);
+        try { tgApp.onEvent && tgApp.onEvent("themeChanged", () => applyTgTheme(tgApp)); } catch (_) {}
+        try { tgApp.onEvent && tgApp.onEvent("backButtonClicked", () => history.back()); } catch (_) {}
+      }
       if (localStorage.getItem("token")) onAuthed();
-      else showView("login");
+      else tryMiniAppLogin().then((ok) => { if (!ok) showView("login"); });
     </script>
   </body>
 </html>

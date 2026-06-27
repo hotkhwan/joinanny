@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"bottrade/internal/journal"
 	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
+	"bottrade/internal/parser"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -59,6 +61,14 @@ func (s *Server) commandTrade(c fiber.Ctx, text string) error {
 	}
 	intent, err := s.parser.Parse(text)
 	if err != nil {
+		// Surface the parser's specific guidance (e.g. "size must use
+		// <amount>usdt") instead of a generic message, so a slightly-off trade
+		// is correctable from the web just like in Telegram. The catch-all stays
+		// for words the parser doesn't recognize at all.
+		var ve parser.ValidationError
+		if errors.As(err, &ve) && !strings.Contains(ve.Message, "not recognized") {
+			return c.JSON(fiber.Map{"output": "⚠️ " + ve.Message})
+		}
 		return c.JSON(fiber.Map{"output": "Unknown command. Type help.\n\n" + webCommandHelp})
 	}
 	if !intent.IsExchangeChanging() {
@@ -138,6 +148,26 @@ func (s *Server) handleSymbols(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "could not load symbols"})
 	}
 	return c.JSON(fiber.Map{"symbols": symbols})
+}
+
+// handlePrices returns last price and 24h change percent for the comma-separated
+// symbols in ?symbols=, so the dashboard can show live quotes beside favourites.
+// Authenticated; the quotes themselves are public data.
+func (s *Server) handlePrices(c fiber.Ctx) error {
+	var symbols []string
+	for _, part := range strings.Split(c.Query("symbols"), ",") {
+		if v := strings.ToUpper(strings.TrimSpace(part)); v != "" {
+			symbols = append(symbols, v)
+		}
+	}
+	if len(symbols) > 50 {
+		symbols = symbols[:50]
+	}
+	prices, err := s.market.Tickers(c.Context(), symbols)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "could not load prices"})
+	}
+	return c.JSON(fiber.Map{"prices": prices})
 }
 
 // webUserID extracts the numeric Telegram id from a "tg:<id>" JWT subject.

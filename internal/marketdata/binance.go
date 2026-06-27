@@ -32,6 +32,10 @@ type BinanceProvider struct {
 	symbols    []string
 	symbolsAt  time.Time
 	symbolsTTL time.Duration
+
+	tickers    map[string]Ticker
+	tickersAt  time.Time
+	tickersTTL time.Duration
 }
 
 // NewBinanceProvider builds a provider. An empty baseURL defaults to production;
@@ -43,7 +47,7 @@ func NewBinanceProvider(baseURL string, client *http.Client) *BinanceProvider {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &BinanceProvider{baseURL: strings.TrimRight(baseURL, "/"), client: client, symbolsTTL: time.Hour}
+	return &BinanceProvider{baseURL: strings.TrimRight(baseURL, "/"), client: client, symbolsTTL: time.Hour, tickersTTL: 5 * time.Second}
 }
 
 // Symbols returns the tradable USDT-margined perpetual symbols on Binance
@@ -109,6 +113,66 @@ func (p *BinanceProvider) SearchSymbols(ctx context.Context, query string, limit
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// Tickers returns the last price and 24h change percent for the requested
+// symbols. It fetches the full Binance Futures 24h ticker list in one request
+// and caches it briefly, so quoting a handful of favourites costs at most one
+// upstream call every few seconds. An empty symbols slice returns every ticker.
+// Symbols with no match are simply omitted from the result.
+func (p *BinanceProvider) Tickers(ctx context.Context, symbols []string) (map[string]Ticker, error) {
+	all, err := p.allTickers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(symbols) == 0 {
+		return all, nil
+	}
+	out := make(map[string]Ticker, len(symbols))
+	for _, sym := range symbols {
+		key := strings.ToUpper(strings.TrimSpace(sym))
+		if t, ok := all[key]; ok {
+			out[key] = t
+		}
+	}
+	return out, nil
+}
+
+// allTickers returns every futures ticker keyed by symbol, served from a short
+// TTL cache shared across callers.
+func (p *BinanceProvider) allTickers(ctx context.Context) (map[string]Ticker, error) {
+	p.mu.Lock()
+	if p.tickers != nil && time.Since(p.tickersAt) < p.tickersTTL {
+		cached := p.tickers
+		p.mu.Unlock()
+		return cached, nil
+	}
+	p.mu.Unlock()
+
+	var rows []struct {
+		Symbol             string `json:"symbol"`
+		LastPrice          string `json:"lastPrice"`
+		PriceChangePercent string `json:"priceChangePercent"`
+	}
+	if err := p.get(ctx, "/fapi/v1/ticker/24hr", nil, &rows); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	tickers := make(map[string]Ticker, len(rows))
+	for _, r := range rows {
+		tickers[r.Symbol] = Ticker{
+			Symbol:         r.Symbol,
+			LastPrice:      parseOrZero(r.LastPrice),
+			PriceChangePct: parseOrZero(r.PriceChangePercent),
+			At:             now,
+		}
+	}
+
+	p.mu.Lock()
+	p.tickers = tickers
+	p.tickersAt = now
+	p.mu.Unlock()
+	return tickers, nil
 }
 
 func (p *BinanceProvider) Funding(ctx context.Context, symbol string) (Funding, error) {

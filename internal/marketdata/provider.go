@@ -59,6 +59,15 @@ type TakerFlow struct {
 	At           time.Time       `json:"at"`
 }
 
+// Ticker is the last traded price and 24h price-change percent for a symbol —
+// the lightweight quote the dashboard shows next to favourites.
+type Ticker struct {
+	Symbol         string          `json:"symbol"`
+	LastPrice      decimal.Decimal `json:"last_price"`
+	PriceChangePct decimal.Decimal `json:"price_change_pct"`
+	At             time.Time       `json:"at"`
+}
+
 // Provider reads derivatives market data for one symbol. Implementations are
 // expected to be safe for concurrent use.
 type Provider interface {

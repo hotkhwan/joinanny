@@ -65,6 +65,13 @@ func TestCommandEndpoint(t *testing.T) {
 		t.Fatalf("unknown command output = %q", out)
 	}
 
+	// A recognized-but-malformed trade surfaces the parser's specific guidance
+	// (here: the missing "usdt" suffix on size), not the generic fallback — so a
+	// near-miss is correctable from the web just like in Telegram.
+	if _, out := run("long BTC 3x entry 67500 sl 65000 tp 72000 size 100", token); !strings.Contains(out, "usdt") || strings.Contains(out, "Unknown command") {
+		t.Fatalf("malformed trade output = %q, want size/usdt guidance", out)
+	}
+
 	// A trade command prepares and returns a confirm_id; /api/confirm executes
 	// it (dry-run).
 	payload, _ := json.Marshal(map[string]string{"command": "long BTC 3x entry 67500 sl 65000 tp 72000 size 100usdt"})
