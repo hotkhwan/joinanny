@@ -56,6 +56,11 @@ type AppConfig struct {
 	// must be positive to enable the trailing-stop monitor.
 	TrailActivatePct string
 	TrailGapPct      string
+	// Realtime position gateway: polls open positions and broadcasts updates /
+	// closes to the web SSE stream and Telegram. Runs only when a live exchange
+	// is available (not dry-run).
+	RealtimeEnabled     bool
+	RealtimePollSeconds int
 }
 
 type TelegramConfig struct {
@@ -110,6 +115,20 @@ type AIConfig struct {
 	Providers        []AIProvider
 	EnsemblePolicy   string // "majority" | "consensus"
 	EnsembleMinVotes int
+	// Market-data enrichment: free Binance Futures order-flow (funding, open
+	// interest, long/short ratio, taker flow) injected into the AI prompt. Uses
+	// the production market-data host even on testnet (public, read-only).
+	MarketDataEnabled bool
+	MarketDataBaseURL string
+	MarketDataPeriod  string // sampling window for ratio endpoints, e.g. "5m"
+	KlineInterval     string // candle interval for EMA/RSI/MACD, e.g. "1h"
+	// Crypto Fear & Greed Index sentiment (free, key-less, market-wide).
+	FearGreedEnabled bool
+	FearGreedBaseURL string
+	// NewsAPI headlines (free tier, API key required). Registered only when a key
+	// is set.
+	NewsAPIKey  string
+	NewsBaseURL string
 }
 
 // AIProvider is one member of the AI ensemble, parsed from AI_PROVIDERS (JSON).
@@ -190,6 +209,8 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.App.ConfirmationTTL = reader.seconds("CONFIRMATION_TTL_SECONDS", cfg.App.ConfirmationTTL)
 	cfg.App.TrailActivatePct = reader.string("TRAIL_ACTIVATE_PCT", cfg.App.TrailActivatePct)
 	cfg.App.TrailGapPct = reader.string("TRAIL_GAP_PCT", cfg.App.TrailGapPct)
+	cfg.App.RealtimeEnabled = reader.bool("REALTIME_ENABLED", true)
+	cfg.App.RealtimePollSeconds = reader.int("REALTIME_POLL_SECONDS", cfg.App.RealtimePollSeconds)
 
 	cfg.Telegram.BotToken = reader.string("TELEGRAM_BOT_TOKEN", cfg.Telegram.BotToken)
 	cfg.Telegram.AdminUserID = reader.userID("TELEGRAM_ADMIN_USER_ID")
@@ -234,6 +255,14 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	if len(cfg.AI.Providers) > 0 {
 		cfg.AI.Enabled = true
 	}
+	cfg.AI.MarketDataBaseURL = reader.string("MARKETDATA_BASE_URL", cfg.AI.MarketDataBaseURL)
+	cfg.AI.MarketDataPeriod = reader.string("MARKETDATA_PERIOD", cfg.AI.MarketDataPeriod)
+	cfg.AI.KlineInterval = reader.string("MARKETDATA_KLINE_INTERVAL", cfg.AI.KlineInterval)
+	cfg.AI.MarketDataEnabled = reader.bool("MARKETDATA_ENABLED", cfg.AI.Enabled)
+	cfg.AI.FearGreedBaseURL = reader.string("FEAR_GREED_BASE_URL", cfg.AI.FearGreedBaseURL)
+	cfg.AI.FearGreedEnabled = reader.bool("FEAR_GREED_ENABLED", cfg.AI.MarketDataEnabled)
+	cfg.AI.NewsAPIKey = reader.string("NEWS_API_KEY", cfg.AI.NewsAPIKey)
+	cfg.AI.NewsBaseURL = reader.string("NEWS_API_BASE_URL", cfg.AI.NewsBaseURL)
 
 	cfg.MongoDB.URI = reader.string("MONGODB_URI", cfg.MongoDB.URI)
 	cfg.MongoDB.Database = reader.string("MONGODB_DATABASE", cfg.MongoDB.Database)
@@ -267,14 +296,15 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 func defaultConfig() Config {
 	return Config{
 		App: AppConfig{
-			Env:                "local",
-			LogLevel:           LogLevelInfo,
-			DryRun:             true,
-			RealTradingEnabled: false,
-			OrderSizingMode:    OrderSizingExplicit,
-			DefaultMarginMode:  MarginModeIsolated,
-			MaxLeverage:        20,
-			ConfirmationTTL:    300 * time.Second,
+			Env:                 "local",
+			LogLevel:            LogLevelInfo,
+			DryRun:              true,
+			RealTradingEnabled:  false,
+			OrderSizingMode:     OrderSizingExplicit,
+			DefaultMarginMode:   MarginModeIsolated,
+			MaxLeverage:         20,
+			ConfirmationTTL:     300 * time.Second,
+			RealtimePollSeconds: 3,
 		},
 		Telegram: TelegramConfig{
 			Mode:              TelegramModePolling,
@@ -297,6 +327,10 @@ func defaultConfig() Config {
 			BaseURL:              "https://api.openai.com/v1",
 			RequestTimeout:       20 * time.Second,
 			MinConfidencePercent: 70,
+			MarketDataBaseURL:    "https://fapi.binance.com",
+			MarketDataPeriod:     "5m",
+			KlineInterval:        "1h",
+			FearGreedBaseURL:     "https://api.alternative.me",
 		},
 		Auth: AuthConfig{
 			EncryptionKeyID: "v1",

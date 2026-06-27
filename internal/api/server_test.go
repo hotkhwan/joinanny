@@ -15,6 +15,7 @@ import (
 	"bottrade/internal/config"
 	"bottrade/internal/decimal"
 	"bottrade/internal/journal"
+	"bottrade/internal/realtime"
 	"bottrade/internal/signals"
 	"bottrade/internal/users"
 )
@@ -181,6 +182,51 @@ func TestStatusRequiresBearerToken(t *testing.T) {
 				t.Fatalf("authorized /status missing flags: %s", body)
 			}
 		})
+	}
+}
+
+func TestStreamGating(t *testing.T) {
+	get := func(server *Server, header string) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/stream", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		resp, err := server.App().Test(req)
+		if err != nil {
+			t.Fatalf("Test: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// No broadcaster wired: disabled.
+	if got := get(NewServer(testConfig(), nil, testLogger()), ""); got != http.StatusNotFound {
+		t.Fatalf("no stream: status = %d, want 404", got)
+	}
+
+	// Broadcaster wired but no status token: still disabled (position data must
+	// never be public).
+	noToken := NewServer(testConfig(), nil, testLogger(), WithRealtime(realtime.NewBroadcaster(0)))
+	if got := get(noToken, ""); got != http.StatusNotFound {
+		t.Fatalf("no token: status = %d, want 404", got)
+	}
+
+	// Broadcaster + token, wrong bearer: rejected before the stream opens.
+	withToken := NewServer(testConfigWith(t, map[string]string{"HTTP_STATUS_TOKEN": "tok"}), nil, testLogger(),
+		WithRealtime(realtime.NewBroadcaster(0)))
+	if got := get(withToken, "Bearer nope"); got != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d, want 401", got)
+	}
+
+	// A wrong ?token= query param (the EventSource path) is also rejected.
+	req := httptest.NewRequest(http.MethodGet, "/api/stream?token=nope", nil)
+	resp, err := withToken.App().Test(req)
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong query token: status = %d, want 401", resp.StatusCode)
 	}
 }
 
