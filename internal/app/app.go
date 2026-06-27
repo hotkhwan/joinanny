@@ -18,6 +18,7 @@ import (
 	"bottrade/internal/monitor"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
+	"bottrade/internal/realtime"
 	"bottrade/internal/signals"
 	mongostore "bottrade/internal/storage/mongo"
 	"bottrade/internal/telegram"
@@ -100,10 +101,15 @@ func (a *App) Run(ctx context.Context) error {
 
 	signalProcessor := a.newSignalProcessor(orderService, signalStore)
 	a.startMonitor(ctx, trailExchange)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	errCh := make(chan error, 2)
 	if a.cfg.HTTP.Enabled {
-		server := api.NewServer(a.cfg, signalProcessor, a.logger, a.serverOptions(signalStore)...)
+		opts := a.serverOptions(signalStore)
+		if broadcaster != nil {
+			opts = append(opts, api.WithRealtime(broadcaster))
+		}
+		server := api.NewServer(a.cfg, signalProcessor, a.logger, opts...)
 		go func() {
 			if err := server.Run(ctx); err != nil {
 				errCh <- err
@@ -128,6 +134,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 
 	if a.cfg.HTTP.Enabled {
 		go func() {
@@ -165,6 +172,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	defer cleanup()
 
 	a.startMonitor(ctx, trailExchange)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	if a.cfg.Telegram.Mode != config.TelegramModePolling {
 		a.logger.Info("telegram mode is not polling; worker idle until shutdown", "telegram_mode", a.cfg.Telegram.Mode)
@@ -176,6 +184,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 
 	return runner.Run(ctx)
 }
@@ -201,6 +210,41 @@ func (a *App) startMonitor(ctx context.Context, trailExchange monitor.Exchange) 
 	}()
 }
 
+// startRealtime launches the realtime position gateway when enabled and a live
+// position source is available, returning the broadcaster that the SSE endpoint
+// and Telegram push subscribe to. Returns nil when realtime is off or the bot is
+// in dry-run (no live positions to stream).
+func (a *App) startRealtime(ctx context.Context, positionSource realtime.PositionSource) *realtime.Broadcaster {
+	if !a.cfg.App.RealtimeEnabled {
+		a.logger.Info("realtime gateway disabled (REALTIME_ENABLED=false)")
+		return nil
+	}
+	if positionSource == nil {
+		a.logger.Info("realtime gateway idle (no live position source; dry-run)")
+		return nil
+	}
+	broadcaster := realtime.NewBroadcaster(0)
+	gateway := realtime.NewGateway(realtime.GatewayConfig{
+		UserID:   a.cfg.Telegram.AdminUserID,
+		Interval: time.Duration(a.cfg.App.RealtimePollSeconds) * time.Second,
+	}, positionSource, broadcaster, a.logger)
+	go func() {
+		if err := gateway.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Error("realtime gateway stopped", "error", err)
+		}
+	}()
+	return broadcaster
+}
+
+// positionSourceOf adapts the trailing exchange into a realtime position source,
+// returning nil when there is no live exchange (dry-run).
+func positionSourceOf(trailExchange monitor.Exchange) realtime.PositionSource {
+	if trailExchange == nil {
+		return nil
+	}
+	return trailExchange
+}
+
 func (a *App) trailPolicy() (monitor.TrailPolicy, bool) {
 	activate, err1 := decimal.Parse(a.cfg.App.TrailActivatePct)
 	gap, err2 := decimal.Parse(a.cfg.App.TrailGapPct)
@@ -222,15 +266,20 @@ func (a *App) RunAPI(ctx context.Context) error {
 
 	a.logBootstrap("api")
 
-	orderService, _, _, signalStore, _, cleanup, err := a.newTradingServices(ctx)
+	orderService, _, _, signalStore, trailExchange, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	processor := a.newSignalProcessor(orderService, signalStore)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
-	server := api.NewServer(a.cfg, processor, a.logger, a.serverOptions(signalStore)...)
+	opts := a.serverOptions(signalStore)
+	if broadcaster != nil {
+		opts = append(opts, api.WithRealtime(broadcaster))
+	}
+	server := api.NewServer(a.cfg, processor, a.logger, opts...)
 	return server.Run(ctx)
 }
 

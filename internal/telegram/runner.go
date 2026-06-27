@@ -6,9 +6,11 @@ import (
 	"log/slog"
 
 	"bottrade/internal/config"
+	"bottrade/internal/decimal"
 	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
+	"bottrade/internal/realtime"
 
 	tgbot "github.com/go-telegram/bot"
 )
@@ -59,4 +61,57 @@ func (r *PollingRunner) Run(ctx context.Context) error {
 	r.bot.Start(ctx)
 	r.logger.Info("telegram polling stopped")
 	return nil
+}
+
+// RealtimeStream is the slice of the realtime broadcaster the push subscriber
+// needs. *realtime.Broadcaster satisfies it.
+type RealtimeStream interface {
+	Subscribe() (<-chan realtime.Event, func())
+}
+
+// StartRealtime pushes realtime trade-closed alerts to the admin chat in the
+// background. Only closes are pushed (not every price tick) so the chat is not
+// flooded; the web SSE stream carries the high-frequency updates. A nil stream
+// or zero chat id is a no-op.
+func (r *PollingRunner) StartRealtime(ctx context.Context, stream RealtimeStream, chatID int64) {
+	if stream == nil || chatID == 0 {
+		return
+	}
+	events, cancel := stream.Subscribe()
+	go func() {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				text, push := formatRealtimeAlert(event)
+				if !push {
+					continue
+				}
+				if _, err := r.bot.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: chatID, Text: text}); err != nil {
+					r.logger.Warn("realtime telegram push failed", "error", err)
+				}
+			}
+		}
+	}()
+}
+
+// formatRealtimeAlert renders the Telegram message for an event, and reports
+// whether it should be pushed at all. Only trade closes are pushed.
+func formatRealtimeAlert(event realtime.Event) (string, bool) {
+	if event.Type != realtime.EventTradeClosed {
+		return "", false
+	}
+	emoji := "⚪"
+	switch {
+	case event.RealizedPnL.IsPositive():
+		emoji = "🟢"
+	case event.RealizedPnL.Cmp(decimal.Zero()) < 0:
+		emoji = "🔴"
+	}
+	return fmt.Sprintf("%s %s position closed — realized PnL %s USDT", emoji, event.Symbol, event.RealizedPnL.String()), true
 }

@@ -56,6 +56,11 @@ type AppConfig struct {
 	// must be positive to enable the trailing-stop monitor.
 	TrailActivatePct string
 	TrailGapPct      string
+	// Realtime position gateway: polls open positions and broadcasts updates /
+	// closes to the web SSE stream and Telegram. Runs only when a live exchange
+	// is available (not dry-run).
+	RealtimeEnabled     bool
+	RealtimePollSeconds int
 }
 
 type TelegramConfig struct {
@@ -200,6 +205,8 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.App.ConfirmationTTL = reader.seconds("CONFIRMATION_TTL_SECONDS", cfg.App.ConfirmationTTL)
 	cfg.App.TrailActivatePct = reader.string("TRAIL_ACTIVATE_PCT", cfg.App.TrailActivatePct)
 	cfg.App.TrailGapPct = reader.string("TRAIL_GAP_PCT", cfg.App.TrailGapPct)
+	cfg.App.RealtimeEnabled = reader.bool("REALTIME_ENABLED", true)
+	cfg.App.RealtimePollSeconds = reader.int("REALTIME_POLL_SECONDS", cfg.App.RealtimePollSeconds)
 
 	cfg.Telegram.BotToken = reader.string("TELEGRAM_BOT_TOKEN", cfg.Telegram.BotToken)
 	cfg.Telegram.AdminUserID = reader.userID("TELEGRAM_ADMIN_USER_ID")
@@ -283,14 +290,15 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 func defaultConfig() Config {
 	return Config{
 		App: AppConfig{
-			Env:                "local",
-			LogLevel:           LogLevelInfo,
-			DryRun:             true,
-			RealTradingEnabled: false,
-			OrderSizingMode:    OrderSizingExplicit,
-			DefaultMarginMode:  MarginModeIsolated,
-			MaxLeverage:        20,
-			ConfirmationTTL:    300 * time.Second,
+			Env:                 "local",
+			LogLevel:            LogLevelInfo,
+			DryRun:              true,
+			RealTradingEnabled:  false,
+			OrderSizingMode:     OrderSizingExplicit,
+			DefaultMarginMode:   MarginModeIsolated,
+			MaxLeverage:         20,
+			ConfirmationTTL:     300 * time.Second,
+			RealtimePollSeconds: 3,
 		},
 		Telegram: TelegramConfig{
 			Mode:              TelegramModePolling,
