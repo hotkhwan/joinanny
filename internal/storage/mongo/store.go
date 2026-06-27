@@ -24,6 +24,7 @@ type Store struct {
 	auditEvents   *mongodriver.Collection
 	users         *mongodriver.Collection
 	journalTrades *mongodriver.Collection
+	credentials   *mongodriver.Collection
 }
 
 func Connect(ctx context.Context, cfg Config) (*Store, error) {
@@ -55,6 +56,7 @@ func Connect(ctx context.Context, cfg Config) (*Store, error) {
 		auditEvents:   db.Collection("audit_events"),
 		users:         db.Collection("users"),
 		journalTrades: db.Collection("journal_trades"),
+		credentials:   db.Collection("binance_credentials"),
 	}
 	if err := store.ensureIndexes(ctx); err != nil {
 		_ = client.Disconnect(ctx)
@@ -191,6 +193,14 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("create journal indexes: %w", err)
+	}
+
+	_, err = s.credentials.Indexes().CreateOne(ctx, mongodriver.IndexModel{
+		Keys:    bson.D{{Key: "user_id", Value: 1}},
+		Options: options.Index().SetName("credential_user_unique").SetUnique(true),
+	})
+	if err != nil {
+		return fmt.Errorf("create credential indexes: %w", err)
 	}
 
 	return nil

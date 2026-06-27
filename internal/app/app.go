@@ -263,6 +263,19 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 			a.logger.Warn("session tokens disabled", "error", err)
 		}
 	}
+
+	if store, ok := signalStore.(*mongostore.Store); ok && a.cfg.Auth.Enabled {
+		keyring, err := auth.NewKeyring(map[string][]byte{a.cfg.Auth.EncryptionKeyID: a.cfg.Auth.EncryptionKey}, a.cfg.Auth.EncryptionKeyID)
+		if err == nil {
+			if credentialService, err := auth.NewCredentialService(keyring, store.Credentials()); err == nil {
+				opts = append(opts, api.WithCredentials(credentialService))
+			} else {
+				a.logger.Warn("per-user credentials disabled", "error", err)
+			}
+		} else {
+			a.logger.Warn("per-user credentials disabled", "error", err)
+		}
+	}
 	return opts
 }
 

@@ -333,6 +333,77 @@ func TestRegisterAndLogin(t *testing.T) {
 	}
 }
 
+type memCredRepo struct {
+	m map[string]auth.BinanceCredential
+}
+
+func (r *memCredRepo) Save(_ context.Context, c auth.BinanceCredential) error {
+	r.m[c.UserID] = c
+	return nil
+}
+func (r *memCredRepo) Find(_ context.Context, id string) (auth.BinanceCredential, error) {
+	c, ok := r.m[id]
+	if !ok {
+		return auth.BinanceCredential{}, auth.ErrNoCredential
+	}
+	return c, nil
+}
+func (r *memCredRepo) Remove(_ context.Context, id string) error { delete(r.m, id); return nil }
+
+func TestCredentialEndpoints(t *testing.T) {
+	userSvc, _ := users.NewService(users.NewMemoryRepository())
+	tk := testTokenizer(t)
+	keyring, err := auth.NewKeyring(map[string][]byte{"v1": bytes.Repeat([]byte("a"), auth.KeySize)}, "v1")
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
+	}
+	credSvc, _ := auth.NewCredentialService(keyring, &memCredRepo{m: map[string]auth.BinanceCredential{}})
+	server := NewServer(testConfig(), nil, testLogger(), WithUsers(userSvc), WithTokenizer(tk), WithCredentials(credSvc))
+
+	do := func(method, path, token, payload string) (int, []byte) {
+		var rdr *bytes.Buffer
+		if payload != "" {
+			rdr = bytes.NewBufferString(payload)
+		} else {
+			rdr = bytes.NewBuffer(nil)
+		}
+		req := httptest.NewRequest(method, path, rdr)
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.App().Test(req)
+		if err != nil {
+			t.Fatalf("Test %s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+
+	// Unauthenticated -> 401.
+	if status, _ := do(http.MethodGet, "/api/credentials", "", ""); status != http.StatusUnauthorized {
+		t.Fatalf("no-auth GET status = %d, want 401", status)
+	}
+
+	token, _ := tk.Issue("tg:123", "alice", "trader")
+
+	if status, _ := do(http.MethodGet, "/api/credentials", token, ""); status != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", status)
+	}
+	if status, _ := do(http.MethodPost, "/api/credentials", token, `{"api_key":"pubkey-abcd","api_secret":"secret-xyz","testnet":true}`); status != http.StatusCreated {
+		t.Fatalf("POST status = %d, want 201", status)
+	}
+	status, body := do(http.MethodGet, "/api/credentials", token, "")
+	if status != http.StatusOK {
+		t.Fatalf("GET after store = %d", status)
+	}
+	// Must report configured + masked tail, never the secret.
+	if !bytes.Contains(body, []byte(`"configured":true`)) || bytes.Contains(body, []byte("secret-xyz")) || bytes.Contains(body, []byte("pubkey-abcd")) {
+		t.Fatalf("credential GET leaked or wrong: %s", body)
+	}
+}
+
 func TestReportEndpoint(t *testing.T) {
 	repo := journal.NewMemoryRepository()
 	jsvc, err := journal.NewService(repo)

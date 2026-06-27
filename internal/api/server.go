@@ -38,13 +38,14 @@ const (
 )
 
 type Server struct {
-	cfg       config.Config
-	processor *signals.Processor
-	users     *users.Service
-	report    *journal.Service
-	tokenizer *auth.Tokenizer
-	logger    *slog.Logger
-	app       *fiber.App
+	cfg         config.Config
+	processor   *signals.Processor
+	users       *users.Service
+	report      *journal.Service
+	tokenizer   *auth.Tokenizer
+	credentials *auth.CredentialService
+	logger      *slog.Logger
+	app         *fiber.App
 }
 
 // Option customises a Server without breaking existing call sites.
@@ -64,6 +65,11 @@ func WithTokenizer(t *auth.Tokenizer) Option {
 // WithReport enables the GET /api/report endpoint backed by the trade journal.
 func WithReport(svc *journal.Service) Option {
 	return func(s *Server) { s.report = svc }
+}
+
+// WithCredentials enables the /api/credentials endpoints (per-user Binance keys).
+func WithCredentials(svc *auth.CredentialService) Option {
+	return func(s *Server) { s.credentials = svc }
 }
 
 func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Logger, opts ...Option) *Server {
@@ -129,6 +135,9 @@ func (s *Server) routes() {
 	s.app.Post("/api/register", authLimiter, s.handleRegister)
 	s.app.Post("/api/login", authLimiter, s.handleLogin)
 	s.app.Get("/api/report", s.handleReport)
+	s.app.Post("/api/credentials", s.requireAuth, s.handleStoreCredential)
+	s.app.Get("/api/credentials", s.requireAuth, s.handleGetCredential)
+	s.app.Delete("/api/credentials", s.requireAuth, s.handleDeleteCredential)
 
 	// Rate-limit the public webhook: it is the only internet-reachable path that
 	// can drive the signal/order flow, so cap brute-forcing of the secret and
@@ -238,6 +247,63 @@ func (s *Server) handleReport(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(report)
+}
+
+type credentialBody struct {
+	APIKey    string `json:"api_key"`
+	APISecret string `json:"api_secret"`
+	Testnet   bool   `json:"testnet"`
+}
+
+func (s *Server) handleStoreCredential(c fiber.Ctx) error {
+	if s.credentials == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled (set CREDENTIAL_ENCRYPTION_KEY)"})
+	}
+	var body credentialBody
+	if err := json.Unmarshal(c.Body(), &body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	err := s.credentials.Store(c.Context(), claimsOf(c).Subject, auth.BinanceKeys{
+		APIKey:    body.APIKey,
+		APISecret: body.APISecret,
+		Testnet:   body.Testnet,
+	})
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"configured": true, "testnet": body.Testnet})
+}
+
+func (s *Server) handleGetCredential(c fiber.Ctx) error {
+	if s.credentials == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
+	}
+	keys, err := s.credentials.Load(c.Context(), claimsOf(c).Subject)
+	if errors.Is(err, auth.ErrNoCredential) {
+		return c.JSON(fiber.Map{"configured": false})
+	}
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read credential"})
+	}
+	// Never return the secret — only that it is set, plus the masked key tail.
+	return c.JSON(fiber.Map{"configured": true, "testnet": keys.Testnet, "api_key_tail": maskTail(keys.APIKey)})
+}
+
+func (s *Server) handleDeleteCredential(c fiber.Ctx) error {
+	if s.credentials == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
+	}
+	if err := s.credentials.Delete(c.Context(), claimsOf(c).Subject); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not delete credential"})
+	}
+	return c.JSON(fiber.Map{"configured": false})
+}
+
+func maskTail(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return "…" + s[len(s)-4:]
 }
 
 func (s *Server) handleLogin(c fiber.Ctx) error {

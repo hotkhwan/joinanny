@@ -18,7 +18,7 @@ type BinanceKeys struct {
 // BinanceCredential is the at-rest record for one user. The API key and secret
 // are always encrypted here, never stored in plaintext.
 type BinanceCredential struct {
-	UserID    int64  `bson:"user_id" json:"user_id"`
+	UserID    string `bson:"user_id" json:"user_id"`
 	APIKey    Sealed `bson:"api_key" json:"api_key"`
 	APISecret Sealed `bson:"api_secret" json:"api_secret"`
 	Testnet   bool   `bson:"testnet" json:"testnet"`
@@ -32,8 +32,8 @@ var ErrNoCredential = errors.New("auth: no binance credential for user")
 // return ErrNoCredential when the user has no record.
 type CredentialRepository interface {
 	Save(ctx context.Context, cred BinanceCredential) error
-	Find(ctx context.Context, userID int64) (BinanceCredential, error)
-	Remove(ctx context.Context, userID int64) error
+	Find(ctx context.Context, userID string) (BinanceCredential, error)
+	Remove(ctx context.Context, userID string) error
 }
 
 // CredentialService encrypts credentials before they reach the repository and
@@ -56,9 +56,9 @@ func NewCredentialService(keyring *Keyring, repo CredentialRepository) (*Credent
 }
 
 // Store seals the user's keys and persists them, replacing any existing record.
-func (s *CredentialService) Store(ctx context.Context, userID int64, keys BinanceKeys) error {
-	if userID <= 0 {
-		return errors.New("auth: user id must be positive")
+func (s *CredentialService) Store(ctx context.Context, userID string, keys BinanceKeys) error {
+	if strings.TrimSpace(userID) == "" {
+		return errors.New("auth: user id is required")
 	}
 	if strings.TrimSpace(keys.APIKey) == "" || strings.TrimSpace(keys.APISecret) == "" {
 		return errors.New("auth: api key and secret are required")
@@ -83,7 +83,7 @@ func (s *CredentialService) Store(ctx context.Context, userID int64, keys Binanc
 
 // Load fetches and decrypts a user's keys. It returns ErrNoCredential if none
 // are stored.
-func (s *CredentialService) Load(ctx context.Context, userID int64) (BinanceKeys, error) {
+func (s *CredentialService) Load(ctx context.Context, userID string) (BinanceKeys, error) {
 	cred, err := s.repo.Find(ctx, userID)
 	if err != nil {
 		return BinanceKeys{}, err
@@ -102,6 +102,6 @@ func (s *CredentialService) Load(ctx context.Context, userID int64) (BinanceKeys
 }
 
 // Delete removes a user's stored credential.
-func (s *CredentialService) Delete(ctx context.Context, userID int64) error {
+func (s *CredentialService) Delete(ctx context.Context, userID string) error {
 	return s.repo.Remove(ctx, userID)
 }
