@@ -310,20 +310,52 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 	return orderService, statusService, planService, store, trailExchange, cleanup, nil
 }
 
+func (a *App) buildEnsemble() signals.Advisor {
+	specs := make([]ai.ProviderSpec, 0, len(a.cfg.AI.Providers))
+	for _, p := range a.cfg.AI.Providers {
+		specs = append(specs, ai.ProviderSpec{
+			Name:     p.Name,
+			Provider: p.Provider,
+			APIKey:   p.APIKey,
+			BaseURL:  p.BaseURL,
+			Model:    p.Model,
+		})
+	}
+	advisor, err := ai.BuildEnsemble(specs, a.cfg.AI.EnsemblePolicy, a.cfg.AI.EnsembleMinVotes, a.cfg.AI.RequestTimeout, nil)
+	if err != nil {
+		a.logger.Warn("ai ensemble build failed; AI disabled", "error", err)
+		return nil
+	}
+	a.logger.Info("ai ensemble configured", "providers", len(specs), "policy", a.cfg.AI.EnsemblePolicy)
+	return advisor
+}
+
 func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signals.SignalStore) *signals.Processor {
 	var advisor signals.Advisor
 	if a.cfg.AI.Enabled {
-		switch a.cfg.AI.Provider {
-		case "openai_compatible":
-			advisor = ai.NewOpenAICompatibleAdvisor(ai.OpenAICompatibleConfig{
-				APIKey:         a.cfg.AI.APIKey,
-				BaseURL:        a.cfg.AI.BaseURL,
-				Model:          a.cfg.AI.Model,
-				SystemPrompt:   a.cfg.AI.SystemPrompt,
-				RequestTimeout: a.cfg.AI.RequestTimeout,
-			})
-		default:
-			a.logger.Warn("ai provider is not supported", "provider", a.cfg.AI.Provider)
+		if len(a.cfg.AI.Providers) > 0 {
+			advisor = a.buildEnsemble()
+		} else {
+			switch a.cfg.AI.Provider {
+			case "openai_compatible":
+				advisor = ai.NewOpenAICompatibleAdvisor(ai.OpenAICompatibleConfig{
+					APIKey:         a.cfg.AI.APIKey,
+					BaseURL:        a.cfg.AI.BaseURL,
+					Model:          a.cfg.AI.Model,
+					SystemPrompt:   a.cfg.AI.SystemPrompt,
+					RequestTimeout: a.cfg.AI.RequestTimeout,
+				})
+			case "anthropic":
+				advisor = ai.NewAnthropicAdvisor(ai.AnthropicConfig{
+					APIKey:         a.cfg.AI.APIKey,
+					BaseURL:        a.cfg.AI.BaseURL,
+					Model:          a.cfg.AI.Model,
+					SystemPrompt:   a.cfg.AI.SystemPrompt,
+					RequestTimeout: a.cfg.AI.RequestTimeout,
+				})
+			default:
+				a.logger.Warn("ai provider is not supported", "provider", a.cfg.AI.Provider)
+			}
 		}
 	}
 

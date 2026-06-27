@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -104,6 +105,20 @@ type AIConfig struct {
 	RequestTimeout       time.Duration
 	MinConfidencePercent int
 	AutoTradeEnabled     bool
+	// Ensemble (multi-AI panel). When Providers is non-empty the signal
+	// processor uses the panel instead of the single Provider above.
+	Providers        []AIProvider
+	EnsemblePolicy   string // "majority" | "consensus"
+	EnsembleMinVotes int
+}
+
+// AIProvider is one member of the AI ensemble, parsed from AI_PROVIDERS (JSON).
+type AIProvider struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"` // "anthropic" | "openai_compatible"
+	APIKey   string `json:"api_key"`
+	BaseURL  string `json:"base_url"`
+	Model    string `json:"model"`
 }
 
 type StripeConfig struct {
@@ -213,6 +228,12 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.AI.MinConfidencePercent = reader.int("AI_MIN_CONFIDENCE_PERCENT", cfg.AI.MinConfidencePercent)
 	cfg.AI.AutoTradeEnabled = reader.bool("AI_AUTOTRADE_ENABLED", cfg.AI.AutoTradeEnabled)
 	cfg.AI.Enabled = reader.bool("AI_ENABLED", cfg.AI.Provider != "disabled" || anySet(cfg.AI.APIKey, cfg.AI.Model))
+	cfg.AI.Providers = reader.aiProviders("AI_PROVIDERS")
+	cfg.AI.EnsemblePolicy = strings.ToLower(reader.string("AI_ENSEMBLE_POLICY", cfg.AI.EnsemblePolicy))
+	cfg.AI.EnsembleMinVotes = reader.int("AI_ENSEMBLE_MIN_VOTES", cfg.AI.EnsembleMinVotes)
+	if len(cfg.AI.Providers) > 0 {
+		cfg.AI.Enabled = true
+	}
 
 	cfg.MongoDB.URI = reader.string("MONGODB_URI", cfg.MongoDB.URI)
 	cfg.MongoDB.Database = reader.string("MONGODB_DATABASE", cfg.MongoDB.Database)
@@ -374,13 +395,28 @@ func validate(cfg Config, problems *[]string) {
 	}
 
 	if cfg.AI.Enabled {
-		if cfg.AI.Provider != "openai_compatible" {
-			addProblem(problems, "AI_PROVIDER must be disabled or openai_compatible")
-		}
-		requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
-		requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
-		if !validHTTPURL(cfg.AI.BaseURL) {
-			addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+		if len(cfg.AI.Providers) > 0 {
+			// Ensemble mode: validate each panel member instead of the single
+			// AI_PROVIDER block.
+			for i, provider := range cfg.AI.Providers {
+				if provider.Provider != "anthropic" && provider.Provider != "openai_compatible" {
+					addProblem(problems, fmt.Sprintf("AI_PROVIDERS[%d].provider must be anthropic or openai_compatible", i))
+				}
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].api_key", i), provider.APIKey)
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].model", i), provider.Model)
+			}
+			if !oneOf(cfg.AI.EnsemblePolicy, "", "majority", "consensus") {
+				addProblem(problems, "AI_ENSEMBLE_POLICY must be majority or consensus")
+			}
+		} else {
+			if cfg.AI.Provider != "openai_compatible" && cfg.AI.Provider != "anthropic" {
+				addProblem(problems, "AI_PROVIDER must be disabled, openai_compatible, or anthropic")
+			}
+			requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
+			requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
+			if !validHTTPURL(cfg.AI.BaseURL) {
+				addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+			}
 		}
 		if cfg.AI.RequestTimeout <= 0 {
 			addProblem(problems, "AI_REQUEST_TIMEOUT_SECONDS must be greater than 0")
@@ -474,6 +510,19 @@ func (r *envReader) seconds(name string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Second
+}
+
+func (r *envReader) aiProviders(name string) []AIProvider {
+	raw, ok := r.lookup(name)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var providers []AIProvider
+	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
+		r.add("%s must be a JSON array of {name,provider,api_key,base_url,model}", name)
+		return nil
+	}
+	return providers
 }
 
 func (r *envReader) base64(name string) []byte {
