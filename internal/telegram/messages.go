@@ -27,6 +27,10 @@ Backtest a strategy on history (offline, no risk):
 Profit goal — preview the plan (simulation, no real orders):
 /goal profit 10 capital 100
 
+Autonomous campaign (testnet, gated):
+/campaign start profit 10 capital 100 symbol BTC
+/campaign stop
+
 Phase 2 management:
 be BTC
 move sl BTC to be

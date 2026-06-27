@@ -61,6 +61,10 @@ type AppConfig struct {
 	// is available (not dry-run).
 	RealtimeEnabled     bool
 	RealtimePollSeconds int
+	// CampaignLiveEnabled is the explicit opt-in for autonomous campaign
+	// execution. It additionally requires testnet + real-trading-off + not
+	// dry-run at runtime, so it can never place live-account orders.
+	CampaignLiveEnabled bool
 }
 
 type TelegramConfig struct {
@@ -216,6 +220,7 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.App.TrailGapPct = reader.string("TRAIL_GAP_PCT", cfg.App.TrailGapPct)
 	cfg.App.RealtimeEnabled = reader.bool("REALTIME_ENABLED", true)
 	cfg.App.RealtimePollSeconds = reader.int("REALTIME_POLL_SECONDS", cfg.App.RealtimePollSeconds)
+	cfg.App.CampaignLiveEnabled = reader.bool("CAMPAIGN_LIVE_ENABLED", false)
 
 	cfg.Telegram.BotToken = reader.string("TELEGRAM_BOT_TOKEN", cfg.Telegram.BotToken)
 	cfg.Telegram.BotUsername = strings.TrimPrefix(reader.string("TELEGRAM_BOT_USERNAME", cfg.Telegram.BotUsername), "@")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"bottrade/internal/campaignexec"
 	"bottrade/internal/config"
 	"bottrade/internal/decimal"
 	"bottrade/internal/marketdata"
@@ -16,8 +17,16 @@ import (
 )
 
 type PollingRunner struct {
-	bot    *tgbot.Bot
-	logger *slog.Logger
+	bot     *tgbot.Bot
+	handler *Handler
+	logger  *slog.Logger
+}
+
+// SetCampaignManager enables the /campaign command on the runner's handler.
+func (r *PollingRunner) SetCampaignManager(manager *campaignexec.Manager) {
+	if r.handler != nil {
+		r.handler.WithCampaigns(manager)
+	}
 }
 
 func NewPollingRunner(cfg config.Config, orderService *orders.Service, statusService *orders.StatusService, planService *plans.Service, logger *slog.Logger) (*PollingRunner, error) {
@@ -51,8 +60,9 @@ func NewPollingRunner(cfg config.Config, orderService *orders.Service, statusSer
 	}
 
 	return &PollingRunner{
-		bot:    b,
-		logger: logger,
+		bot:     b,
+		handler: handler,
+		logger:  logger,
 	}, nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"bottrade/internal/ai"
 	"bottrade/internal/api"
 	"bottrade/internal/auth"
+	"bottrade/internal/campaignexec"
 	"bottrade/internal/config"
 	"bottrade/internal/decimal"
 	binanceexec "bottrade/internal/exchange/binance"
@@ -142,6 +143,7 @@ func (a *App) Run(ctx context.Context) error {
 	if broadcaster != nil {
 		runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 	}
+	runner.SetCampaignManager(a.buildCampaignManager(orderService, broadcaster))
 
 	if a.cfg.HTTP.Enabled {
 		go func() {
@@ -197,6 +199,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	if broadcaster != nil {
 		runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 	}
+	runner.SetCampaignManager(a.buildCampaignManager(orderService, broadcaster))
 
 	return runner.Run(ctx)
 }
@@ -454,37 +457,75 @@ func (a *App) buildEnsemble(enricher ai.ContextEnricher) signals.Advisor {
 	return advisor
 }
 
-func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signals.SignalStore) *signals.Processor {
-	var advisor signals.Advisor
-	if a.cfg.AI.Enabled {
-		enricher := a.buildEnricher()
-		if len(a.cfg.AI.Providers) > 0 {
-			advisor = a.buildEnsemble(enricher)
-		} else {
-			switch a.cfg.AI.Provider {
-			case "openai_compatible":
-				advisor = ai.NewOpenAICompatibleAdvisor(ai.OpenAICompatibleConfig{
-					APIKey:         a.cfg.AI.APIKey,
-					BaseURL:        a.cfg.AI.BaseURL,
-					Model:          a.cfg.AI.Model,
-					SystemPrompt:   a.cfg.AI.SystemPrompt,
-					RequestTimeout: a.cfg.AI.RequestTimeout,
-					Enricher:       enricher,
-				})
-			case "anthropic":
-				advisor = ai.NewAnthropicAdvisor(ai.AnthropicConfig{
-					APIKey:         a.cfg.AI.APIKey,
-					BaseURL:        a.cfg.AI.BaseURL,
-					Model:          a.cfg.AI.Model,
-					SystemPrompt:   a.cfg.AI.SystemPrompt,
-					RequestTimeout: a.cfg.AI.RequestTimeout,
-					Enricher:       enricher,
-				})
-			default:
-				a.logger.Warn("ai provider is not supported", "provider", a.cfg.AI.Provider)
-			}
-		}
+// buildAdvisor constructs the AI advisor (ensemble or single provider) with the
+// market-data enricher, or nil when AI is disabled / unconfigured. Shared by the
+// signal processor and the autonomous campaign engine.
+func (a *App) buildAdvisor() signals.Advisor {
+	if !a.cfg.AI.Enabled {
+		return nil
 	}
+	enricher := a.buildEnricher()
+	if len(a.cfg.AI.Providers) > 0 {
+		return a.buildEnsemble(enricher)
+	}
+	switch a.cfg.AI.Provider {
+	case "openai_compatible":
+		return ai.NewOpenAICompatibleAdvisor(ai.OpenAICompatibleConfig{
+			APIKey:         a.cfg.AI.APIKey,
+			BaseURL:        a.cfg.AI.BaseURL,
+			Model:          a.cfg.AI.Model,
+			SystemPrompt:   a.cfg.AI.SystemPrompt,
+			RequestTimeout: a.cfg.AI.RequestTimeout,
+			Enricher:       enricher,
+		})
+	case "anthropic":
+		return ai.NewAnthropicAdvisor(ai.AnthropicConfig{
+			APIKey:         a.cfg.AI.APIKey,
+			BaseURL:        a.cfg.AI.BaseURL,
+			Model:          a.cfg.AI.Model,
+			SystemPrompt:   a.cfg.AI.SystemPrompt,
+			RequestTimeout: a.cfg.AI.RequestTimeout,
+			Enricher:       enricher,
+		})
+	default:
+		a.logger.Warn("ai provider is not supported", "provider", a.cfg.AI.Provider)
+		return nil
+	}
+}
+
+// buildCampaignManager assembles the autonomous campaign manager. It returns nil
+// when the pieces required for live resolution are absent (no realtime
+// broadcaster — i.e. dry-run — or no AI advisor), so /campaign reports
+// unavailable rather than running half-wired. The manager's own safety gate
+// still enforces testnet / real-trading-off / opt-in at start time.
+func (a *App) buildCampaignManager(orderService *orders.Service, broadcaster *realtime.Broadcaster) *campaignexec.Manager {
+	if broadcaster == nil {
+		return nil
+	}
+	advisor := a.buildAdvisor()
+	if advisor == nil {
+		return nil
+	}
+	prices := marketdata.NewBinanceProvider(a.cfg.AI.MarketDataBaseURL, nil)
+	deps := campaignexec.ManagerDeps{
+		Signals:  campaignexec.NewMarketDataSignals(prices),
+		Advisor:  advisor,
+		Placer:   campaignexec.NewServicePlacer(orderService, a.cfg.App.MaxLeverage),
+		Resolver: campaignexec.NewRealtimeResolver(broadcaster, 0),
+		Logger:   a.logger,
+	}
+	safety := campaignexec.Safety{
+		Enabled:            a.cfg.App.CampaignLiveEnabled,
+		Testnet:            a.cfg.Binance.Testnet,
+		RealTradingEnabled: a.cfg.App.RealTradingEnabled,
+		DryRun:             a.cfg.App.DryRun,
+	}
+	a.logger.Info("autonomous campaign manager configured", "live_enabled", a.cfg.App.CampaignLiveEnabled)
+	return campaignexec.NewManager(deps, safety)
+}
+
+func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signals.SignalStore) *signals.Processor {
+	advisor := a.buildAdvisor()
 
 	adminUserID := a.cfg.Telegram.AdminUserID
 	if adminUserID == 0 && len(a.cfg.Telegram.AllowedUserIDs) > 0 {

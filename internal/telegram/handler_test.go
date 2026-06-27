@@ -141,6 +141,17 @@ func TestHandlerGoalCommandThaiFallbackAndUsage(t *testing.T) {
 	}
 }
 
+func TestHandlerCampaignNotEnabled(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger()) // no campaign manager wired
+	sender := &fakeSender{}
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/campaign start profit 10")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if got := sender.singleMessage(t); !strings.Contains(got.Text, "not enabled") {
+		t.Fatalf("message = %q, want not-enabled notice", got.Text)
+	}
+}
+
 func TestHandlerStartCommand(t *testing.T) {
 	handler := NewHandler(12345, nil, testLogger())
 	sender := &fakeSender{}

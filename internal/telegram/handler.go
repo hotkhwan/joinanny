@@ -10,6 +10,7 @@ import (
 
 	"bottrade/internal/backtest"
 	"bottrade/internal/campaign"
+	"bottrade/internal/campaignexec"
 	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
 	"bottrade/internal/marketdata"
@@ -37,7 +38,26 @@ type Handler struct {
 	marketData    marketdata.Provider
 	marketPeriod  string
 	klines        klineSource
+	campaigns     *campaignexec.Manager
 	logger        *slog.Logger
+}
+
+// WithCampaigns enables the /campaign command (autonomous testnet campaigns).
+// When unset, /campaign reports that it is unavailable.
+func (h *Handler) WithCampaigns(manager *campaignexec.Manager) *Handler {
+	h.campaigns = manager
+	return h
+}
+
+// botNotifier sends campaign progress to a chat in the background. The Sender
+// (the bot) outlives any single update, so a captured reference stays valid.
+type botNotifier struct {
+	sender Sender
+	chatID int64
+}
+
+func (n botNotifier) Notify(text string) {
+	_, _ = n.sender.SendMessage(context.Background(), &tgbot.SendMessageParams{ChatID: n.chatID, Text: text})
 }
 
 // klineSource provides historical closes for the /backtest command.
@@ -146,6 +166,8 @@ func (h *Handler) Handle(ctx context.Context, sender Sender, update *models.Upda
 		return h.sendBacktest(ctx, sender, message.Chat.ID, commandArg(text))
 	case "/goal":
 		return h.sendGoal(ctx, sender, message.Chat.ID, text)
+	case "/campaign":
+		return h.handleCampaign(sender, message.Chat.ID, userID, text)
 	}
 
 	intent, err := h.parser.Parse(text)
@@ -320,6 +342,54 @@ func (h *Handler) sendMarket(ctx context.Context, sender Sender, chatID int64, a
 const goalUsage = "Set a profit goal and preview the plan (simulation — no real orders):\n" +
 	"/goal profit 10 capital 100\n" +
 	"Optional: winrate 55 reward 2 risk 1 maxtrades 50 drawdown 30"
+
+const campaignUsage = "Autonomous campaign (testnet):\n" +
+	"/campaign start profit 10 capital 100 symbol BTC\n" +
+	"/campaign stop"
+
+// handleCampaign starts or stops an autonomous campaign. Starting is heavily
+// gated by the manager (testnet only, real trading off, explicit opt-in); this
+// handler just parses the request and reports refusals.
+func (h *Handler) handleCampaign(sender Sender, chatID, userID int64, text string) error {
+	bg := context.Background()
+	if h.campaigns == nil {
+		return h.sendText(bg, sender, chatID, "Autonomous campaigns are not enabled on this deployment.")
+	}
+
+	switch strings.ToLower(commandArg(text)) {
+	case "stop":
+		if h.campaigns.Stop(userID) {
+			return h.sendText(bg, sender, chatID, "⏹ Stopping your campaign after the current trade resolves…")
+		}
+		return h.sendText(bg, sender, chatID, "No campaign is running.")
+	case "start":
+		goal, err := parseGoal(text)
+		if err != nil {
+			return h.sendText(bg, sender, chatID, err.Error()+"\n\n"+campaignUsage)
+		}
+		if _, err := campaign.EstimateTrades(goal); err != nil {
+			return h.sendText(bg, sender, chatID, "⚠️ "+err.Error())
+		}
+		symbol := marketSymbol(symbolArg(text))
+		if err := h.campaigns.Start(userID, symbol, goal, botNotifier{sender: sender, chatID: chatID}); err != nil {
+			return h.sendText(bg, sender, chatID, "⚠️ "+err.Error())
+		}
+		return nil // the manager sends the "started" message
+	default:
+		return h.sendText(bg, sender, chatID, campaignUsage)
+	}
+}
+
+// symbolArg extracts the value after a "symbol" token, or "".
+func symbolArg(text string) string {
+	tokens := strings.Fields(text)
+	for i, tok := range tokens {
+		if strings.EqualFold(tok, "symbol") && i+1 < len(tokens) {
+			return tokens[i+1]
+		}
+	}
+	return ""
+}
 
 func (h *Handler) sendGoal(ctx context.Context, sender Sender, chatID int64, text string) error {
 	goal, err := parseGoal(text)
