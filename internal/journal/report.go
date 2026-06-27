@@ -18,6 +18,7 @@ type Report struct {
 
 	ByStrategy map[string]GroupStat `json:"by_strategy"`
 	ByModel    map[string]GroupStat `json:"by_model"`
+	BySymbol   map[string]GroupStat `json:"by_symbol"`
 }
 
 // GroupStat is the resolved performance of one strategy or one AI model.
@@ -43,6 +44,7 @@ func aggregate(trades []Trade) Report {
 	closed := 0
 	byStrategy := map[string]*groupAcc{}
 	byModel := map[string]*groupAcc{}
+	bySymbol := map[string]*groupAcc{}
 
 	for _, trade := range trades {
 		report.Trades++
@@ -65,6 +67,7 @@ func aggregate(trades []Trade) Report {
 		total = total.Add(trade.PnLUSDT)
 		closed++
 		accumulate(byStrategy, strategyKey(trade.Strategy), trade)
+		accumulate(bySymbol, trade.Symbol, trade)
 		for _, model := range trade.Models {
 			accumulate(byModel, model, trade)
 		}
@@ -78,6 +81,7 @@ func aggregate(trades []Trade) Report {
 	report.Expectancy = div(total, closed)
 	report.ByStrategy = finalize(byStrategy)
 	report.ByModel = finalize(byModel)
+	report.BySymbol = finalize(bySymbol)
 	return report
 }
 

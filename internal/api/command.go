@@ -113,6 +113,23 @@ func (s *Server) handleConfirm(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"output": out})
 }
 
+// handleHistory returns the authenticated user's performance report, including
+// the per-coin breakdown the History page renders as cards.
+func (s *Server) handleHistory(c fiber.Ctx) error {
+	if s.report == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "reporting is not enabled"})
+	}
+	filter := journal.Filter{}
+	if userID, ok := webUserID(c); ok {
+		filter.UserID = userID
+	}
+	report, err := s.report.Report(c.Context(), filter)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not load history"})
+	}
+	return c.JSON(report)
+}
+
 // handleSymbols searches the tradable Binance Futures symbols for the coin
 // picker. Authenticated; the list itself is public data.
 func (s *Server) handleSymbols(c fiber.Ctx) error {

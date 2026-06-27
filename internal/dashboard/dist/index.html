@@ -3,19 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Trading Bot · Dashboard</title>
+    <title>Aliza · Trading</title>
     <style>
       :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
       body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-      main { max-width: 40rem; margin: 4rem auto; padding: 0 1.5rem; }
-      h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-      p { color: #666; margin-top: 0; }
-      .card { margin-top: 1.5rem; border: 1px solid #8883; border-radius: 0.75rem; padding: 1rem 1.25rem; }
+      main { max-width: 40rem; margin: 0 auto; padding: 0 1rem 3rem; }
+      h1 { font-size: 1.25rem; margin: 0; }
+      p { color: #888; margin-top: 0; }
+      .appbar { display: flex; align-items: center; gap: 0.6rem; padding: 1rem 0 0.5rem; }
+      .appbar .spacer { flex: 1; }
+      .who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+      .who img { width: 1.8rem; height: 1.8rem; border-radius: 50%; object-fit: cover; }
+      .nav { display: flex; gap: 0.4rem; position: sticky; top: 0; padding: 0.5rem 0; background: Canvas; z-index: 5; }
+      .nav button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.6rem; background: #8881; color: inherit; font-weight: 600; cursor: pointer; }
+      .nav button.on { background: #3b82f6; color: #fff; }
+      .card { margin-top: 1rem; border: 1px solid #8883; border-radius: 0.75rem; padding: 1rem 1.1rem; }
       .row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #8881; }
       .row:last-child { border-bottom: 0; }
-      code { font-size: 0.85rem; }
       label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.2rem; color: #888; }
-      input, select { width: 100%; box-sizing: border-box; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      input, select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+      button { padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
+      button.primary { background: #3b82f6; color: #fff; flex: 1; }
+      button.ghost { background: #8882; color: inherit; flex: 1; }
+      .msg { margin-top: 0.7rem; font-size: 0.85rem; min-height: 1.1rem; }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+      .chip { padding: 0.3rem 0.7rem; font-size: 0.8rem; font-weight: 500; background: #8882; color: inherit; border-radius: 999px; }
+      .cmdrow { display: flex; gap: 0.5rem; }
+      .output { margin-top: 0.8rem; padding: 0.8rem; background: #8881; border-radius: 0.5rem; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; min-height: 1rem; max-height: 22rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       .profile { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
       .profile .name { font-weight: 600; }
       .badge { font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: #8882; }
@@ -23,396 +39,328 @@
       .badge.active { background: #22c55e33; color: #16a34a; }
       .profile .spacer { flex: 1; }
       .profile button { flex: 0 0 auto; width: auto; padding: 0.3rem 0.6rem; font-size: 0.78rem; }
-      .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
-      button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
-      button.primary { background: #3b82f6; color: #fff; }
-      button.ghost { background: #8882; color: inherit; }
-      .msg { margin-top: 0.75rem; font-size: 0.85rem; min-height: 1.1rem; }
-      .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
-      .chip { flex: 0 0 auto; padding: 0.3rem 0.7rem; font-size: 0.8rem; font-weight: 500; background: #8882; color: inherit; border-radius: 999px; }
-      .cmdrow { display: flex; gap: 0.5rem; }
-      .output { margin-top: 0.8rem; padding: 0.8rem; background: #8881; border-radius: 0.5rem; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; min-height: 1rem; max-height: 22rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .coincard { border: 1px solid #8883; border-radius: 0.7rem; padding: 0.8rem 1rem; margin-bottom: 0.6rem; }
+      .coincard .top { display: flex; align-items: baseline; gap: 0.5rem; }
+      .coincard .sym { font-weight: 700; font-size: 1.05rem; }
+      .coincard .pnl { font-weight: 700; }
+      .coincard .pos { color: #16a34a; }
+      .coincard .neg { color: #dc2626; }
+      .coincard .sub { display: flex; gap: 1.2rem; color: #888; font-size: 0.8rem; margin-top: 0.3rem; }
+      .hidden { display: none; }
     </style>
   </head>
   <body>
     <main>
-      <h1>Trading Bot Dashboard</h1>
-      <p>Register an account to start trading. More traders → more trades → better statistics.</p>
+      <div class="appbar">
+        <h1>Aliza</h1>
+        <span class="spacer"></span>
+        <span class="who hidden" id="who"></span>
+        <button class="ghost hidden" id="logout" style="flex:0 0 auto;width:auto;padding:0.35rem 0.7rem">Log out</button>
+      </div>
 
-      <section class="card" id="authCard">
-        <div id="tgLogin" style="display:none">
-          <strong>Log in with Telegram</strong>
-          <p style="margin:0.3rem 0 0.6rem">One click — uses the same account as the bot, so your keys, positions, and stats are shared.</p>
-          <div id="tgWidget"></div>
-          <div class="msg" id="tgMsg"></div>
-          <details style="margin-top:0.8rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Or use a username &amp; password</summary>
-            <div id="pwBox"></div>
-          </details>
-        </div>
-        <div id="pwForm">
-          <strong id="auth-title">Register</strong>
-          <label for="username">Username</label>
-          <input id="username" autocomplete="username" />
-          <label for="password">Password (min 8 chars)</label>
-          <input id="password" type="password" autocomplete="current-password" />
-          <div class="actions">
-            <button class="primary" id="register">Register</button>
-            <button class="ghost" id="login">Log in</button>
+      <div class="nav hidden" id="nav">
+        <button data-view="orders" class="on">Orders</button>
+        <button data-view="history">History</button>
+        <button data-view="settings">Settings</button>
+      </div>
+
+      <!-- LOGIN -->
+      <section id="view-login">
+        <p>Trade Binance Futures from one place. Telegram is the backend.</p>
+        <div class="card">
+          <div id="tgLogin" class="hidden">
+            <strong>Log in with Telegram</strong>
+            <p style="margin:0.3rem 0 0.6rem">One click — same account as the bot.</p>
+            <div id="tgWidget"></div>
+            <div class="msg" id="tgMsg"></div>
+            <details style="margin-top:0.6rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Or use a username &amp; password</summary><div id="pwBox"></div></details>
           </div>
-          <div class="msg" id="msg"></div>
+          <div id="pwForm">
+            <strong>Register / Log in</strong>
+            <label for="username">Username</label>
+            <input id="username" autocomplete="username" />
+            <label for="password">Password (min 8 chars)</label>
+            <input id="password" type="password" autocomplete="current-password" />
+            <div class="actions">
+              <button class="primary" id="register">Register</button>
+              <button class="ghost" id="login">Log in</button>
+            </div>
+            <div class="msg" id="msg"></div>
+          </div>
         </div>
       </section>
 
-      <section class="card" id="keysCard" style="display:none">
-        <strong>Binance API keys</strong>
-        <p style="margin:0.3rem 0 0.6rem">Add up to a few profiles (e.g. testnet, live) and pick which is active. Enable <b>Futures</b>, disable <b>Withdrawals</b>.</p>
-        <div id="profiles"></div>
-        <label for="profName">Add / update a profile</label>
-        <div class="cmdrow">
-          <input id="profName" placeholder="name (e.g. testnet)" autocomplete="off" />
-          <select id="profNet" style="flex:0 0 auto;width:7rem">
-            <option value="true">testnet</option>
-            <option value="false">live</option>
-          </select>
+      <!-- ORDERS -->
+      <section id="view-orders" class="hidden">
+        <div class="card">
+          <strong>New order &amp; commands</strong>
+          <p style="margin:0.3rem 0 0.6rem">Type a command or trade; trades ask to Confirm first.</p>
+          <div class="chips" style="margin-bottom:0.6rem">
+            <button class="chip" data-cmd="market BTC">market BTC</button>
+            <button class="chip" data-cmd="goal profit 10 risk 50">goal</button>
+            <button class="chip" data-cmd="backtest BTC">backtest BTC</button>
+            <button class="chip" data-cmd="close all">close all</button>
+            <button class="chip" data-cmd="help">help</button>
+          </div>
+          <div class="cmdrow">
+            <input id="cmd" placeholder="long BTC 3x entry 67500 sl 65000 tp 72000 size 100usdt" autocomplete="off" />
+            <button class="primary" id="cmd-run" style="flex:0 0 auto;width:5rem">Run</button>
+          </div>
+          <pre id="cmd-out" class="output"></pre>
+          <div id="cmd-spark"></div>
+          <div id="cmd-confirm" class="actions hidden">
+            <button class="primary" id="cmd-yes">Confirm</button>
+            <button class="ghost" id="cmd-no">Cancel</button>
+          </div>
         </div>
-        <input id="apiKey" placeholder="API key" autocomplete="off" />
-        <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" />
-        <div class="actions">
-          <button class="primary" id="saveKey">Save profile</button>
-        </div>
-        <div class="msg" id="keyMsg"></div>
-      </section>
 
-      <section class="card" id="consoleCard" style="display:none">
-        <strong>Console</strong>
-        <p style="margin:0.3rem 0 0.6rem">One place for everything — Telegram is just the backend.</p>
-        <div class="chips">
-          <button class="chip" data-cmd="market BTC">market BTC</button>
-          <button class="chip" data-cmd="goal profit 10 risk 50">goal</button>
-          <button class="chip" data-cmd="backtest BTC">backtest BTC</button>
-          <button class="chip" data-cmd="report">report</button>
-          <button class="chip" data-cmd="help">help</button>
+        <div class="card">
+          <strong>Coins</strong>
+          <p style="margin:0.3rem 0 0.5rem">Search Binance Futures, star favourites, reorder, tap to view.</p>
+          <input id="coinSearch" placeholder="search e.g. SOL, PEPE…" autocomplete="off" />
+          <div id="coinResults" class="chips" style="margin-top:0.5rem"></div>
+          <div id="favs" style="margin-top:0.3rem"></div>
         </div>
-        <div class="cmdrow">
-          <input id="cmd" placeholder="market BTC  ·  goal profit 10 risk 50" autocomplete="off" />
-          <button class="primary" id="cmd-run" style="flex:0 0 auto;width:5rem">Run</button>
-        </div>
-        <pre id="cmd-out" class="output"></pre>
-        <div id="cmd-spark"></div>
-        <div id="cmd-confirm" class="actions" style="display:none">
-          <button class="primary" id="cmd-yes">Confirm</button>
-          <button class="ghost" id="cmd-no">Cancel</button>
+
+        <div class="card">
+          <strong>Live positions</strong>
+          <div class="msg" id="stream-msg">Connecting…</div>
+          <div id="stream-feed"></div>
         </div>
       </section>
 
-      <section class="card" id="coinsCard" style="display:none">
-        <strong>Coins</strong>
-        <p style="margin:0.3rem 0 0.5rem">Search Binance Futures, star favourites, reorder, and tap to act.</p>
-        <input id="coinSearch" placeholder="search e.g. SOL, PEPE…" autocomplete="off" />
-        <div id="coinResults" class="chips" style="margin-top:0.5rem"></div>
-        <div id="favs" style="margin-top:0.3rem"></div>
+      <!-- HISTORY -->
+      <section id="view-history" class="hidden">
+        <div class="card">
+          <strong>Performance</strong>
+          <div id="report">Loading…</div>
+        </div>
+        <div class="card">
+          <strong>By coin</strong>
+          <p style="margin:0.3rem 0 0.6rem">Which coins are working for you.</p>
+          <div id="bycoin">Loading…</div>
+        </div>
       </section>
 
-      <section class="card">
-        <strong>Performance</strong>
-        <div id="report">Loading…</div>
+      <!-- SETTINGS -->
+      <section id="view-settings" class="hidden">
+        <div class="card">
+          <strong>Binance API keys</strong>
+          <p style="margin:0.3rem 0 0.6rem">Add profiles (testnet, live) and pick the active one. Enable <b>Futures</b>, disable <b>Withdrawals</b>.</p>
+          <div id="profiles"></div>
+          <label for="profName">Add / update a profile</label>
+          <div class="cmdrow">
+            <input id="profName" placeholder="name (e.g. testnet)" autocomplete="off" />
+            <select id="profNet" style="flex:0 0 auto;width:7rem"><option value="true">testnet</option><option value="false">live</option></select>
+          </div>
+          <input id="apiKey" placeholder="API key" autocomplete="off" />
+          <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" />
+          <div class="actions"><button class="primary" id="saveKey">Save profile</button></div>
+          <div class="msg" id="keyMsg"></div>
+        </div>
+        <div class="card" id="status">Loading status…</div>
       </section>
-
-      <section class="card">
-        <strong>Live positions</strong>
-        <div class="msg" id="stream-msg">Log in to see live positions.</div>
-        <div id="stream-feed"></div>
-      </section>
-
-      <section class="card" id="status">Loading status…</section>
     </main>
-    <script>
-      const msg = document.getElementById("msg");
-      function show(text, ok) {
-        msg.textContent = text;
-        msg.style.color = ok ? "#16a34a" : "#dc2626";
-      }
-      async function submit(path) {
-        const username = document.getElementById("username").value;
-        const password = document.getElementById("password").value;
-        try {
-          const r = await fetch(path, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
-          });
-          const d = await r.json().catch(() => ({}));
-          if (r.ok) {
-            show(`Welcome, ${d.username} (${d.role || "user"})`, true);
-            if (d.token) {
-              localStorage.setItem("token", d.token);
-              onAuthed();
-            }
-          } else {
-            show(d.error || `Failed (${r.status})`, false);
-          }
-        } catch (e) {
-          show("Network error", false);
-        }
-      }
-      document.getElementById("register").onclick = () => submit("/api/register");
-      document.getElementById("login").onclick = () => submit("/api/login");
 
+    <script>
+      const $ = (id) => document.getElementById(id);
       function authHeaders() {
         const t = localStorage.getItem("token");
         return t ? { Authorization: "Bearer " + t, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
       }
-      function keyMsg(text, ok) {
-        const el = document.getElementById("keyMsg");
-        el.textContent = text;
-        el.style.color = ok ? "#16a34a" : "#dc2626";
+      function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+      // ---- views / nav ----
+      function showView(name) {
+        ["orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
+        document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
+        if (name === "history") loadHistory();
       }
-      function escapeHtml(s) {
-        return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
+
+      function setProfile(p) {
+        if (p) localStorage.setItem("profile", JSON.stringify(p));
+        const prof = JSON.parse(localStorage.getItem("profile") || "null");
+        if (!prof) return;
+        $("who").innerHTML = (prof.photo ? `<img src="${escapeHtml(prof.photo)}"/>` : "") + `<span>${escapeHtml(prof.name || "trader")}</span>`;
+        $("who").classList.remove("hidden");
       }
+      function onAuthed(profile) {
+        if (profile) setProfile(profile); else setProfile();
+        $("nav").classList.remove("hidden");
+        $("logout").classList.remove("hidden");
+        showView("orders");
+        refreshKeyStatus();
+        connectStream();
+        renderFavs();
+        loadStatus();
+      }
+      $("logout").onclick = () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("profile");
+        if (stream) { stream.close(); stream = null; }
+        $("nav").classList.add("hidden");
+        $("logout").classList.add("hidden");
+        $("who").classList.add("hidden");
+        showView("login");
+      };
+
+      // ---- auth: password ----
+      function show(text, ok) { $("msg").textContent = text; $("msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      async function submit(path) {
+        try {
+          const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: $("username").value, password: $("password").value }) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) { localStorage.setItem("token", d.token); onAuthed({ name: d.username }); }
+          else show(d.error || `Failed (${r.status})`, false);
+        } catch (e) { show("Network error", false); }
+      }
+      $("register").onclick = () => submit("/api/register");
+      $("login").onclick = () => submit("/api/login");
+
+      // ---- auth: Telegram widget ----
+      window.onTelegramAuth = async (user) => {
+        try {
+          const r = await fetch("/api/telegram-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) { localStorage.setItem("token", d.token); onAuthed({ name: user.username || user.first_name, photo: user.photo_url }); }
+          else { $("tgMsg").textContent = d.error || "Login failed"; $("tgMsg").style.color = "#dc2626"; }
+        } catch (e) { $("tgMsg").textContent = "Network error"; }
+      };
+      fetch("/api/auth-config").then((r) => r.json()).then((cfg) => {
+        if (!cfg.telegram_login_enabled || !cfg.telegram_bot_username) return;
+        $("pwBox").appendChild($("pwForm"));
+        $("tgLogin").classList.remove("hidden");
+        const s = document.createElement("script");
+        s.async = true; s.src = "https://telegram.org/js/telegram-widget.js?22";
+        s.setAttribute("data-telegram-login", cfg.telegram_bot_username);
+        s.setAttribute("data-size", "large");
+        s.setAttribute("data-onauth", "onTelegramAuth(user)");
+        s.setAttribute("data-request-access", "write");
+        $("tgWidget").appendChild(s);
+      }).catch(() => {});
+
+      // ---- API key profiles ----
+      function keyMsg(t, ok) { $("keyMsg").textContent = t; $("keyMsg").style.color = ok ? "#16a34a" : "#dc2626"; }
       async function refreshKeyStatus() {
         try {
-          const r = await fetch("/api/credentials", { headers: authHeaders() });
-          const d = await r.json();
+          const d = await (await fetch("/api/credentials", { headers: authHeaders() })).json();
           const list = d.profiles || [];
-          const box = document.getElementById("profiles");
-          if (!list.length) { box.innerHTML = '<p style="color:#888">No profiles yet — add one below.</p>'; return; }
-          box.innerHTML = list
-            .map((p) => {
-              const net = p.testnet ? '<span class="badge">testnet</span>' : '<span class="badge live">live</span>';
-              const active = p.active ? '<span class="badge active">active</span>' : `<button class="ghost" data-active="${escapeHtml(p.profile)}">Make active</button>`;
-              return `<div class="profile"><span class="name">${escapeHtml(p.profile)}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
-            })
-            .join("");
+          const box = $("profiles");
+          if (!list.length) { box.innerHTML = '<p>No profiles yet — add one below.</p>'; return; }
+          box.innerHTML = list.map((p) => {
+            const net = p.testnet ? '<span class="badge">testnet</span>' : '<span class="badge live">live</span>';
+            const active = p.active ? '<span class="badge active">active</span>' : `<button class="ghost" data-active="${escapeHtml(p.profile)}">Make active</button>`;
+            return `<div class="profile"><span class="name">${escapeHtml(p.profile)}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
+          }).join("");
           box.querySelectorAll("[data-active]").forEach((b) => (b.onclick = () => setActive(b.dataset.active)));
           box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => removeProfile(b.dataset.del)));
         } catch (e) {}
       }
-      async function setActive(profile) {
-        await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) });
-        refreshKeyStatus();
-      }
-      async function removeProfile(profile) {
-        await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() });
-        refreshKeyStatus();
-      }
-      function onAuthed() {
-        document.getElementById("authCard").style.display = "none";
-        document.getElementById("keysCard").style.display = "";
-        document.getElementById("consoleCard").style.display = "";
-        document.getElementById("coinsCard").style.display = "";
-        refreshKeyStatus();
-        connectStream();
-        renderFavs();
-      }
+      async function setActive(profile) { await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) }); refreshKeyStatus(); }
+      async function removeProfile(profile) { await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() }); refreshKeyStatus(); }
+      $("saveKey").onclick = async () => {
+        const profile = $("profName").value.trim() || "default";
+        const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ profile, api_key: $("apiKey").value, api_secret: $("apiSecret").value, testnet: $("profNet").value === "true" }) });
+        const d = await r.json().catch(() => ({}));
+        keyMsg(r.ok ? `Saved profile "${profile}".` : d.error || "Failed", r.ok);
+        $("apiKey").value = ""; $("apiSecret").value = ""; refreshKeyStatus();
+      };
 
-      // Coins: search Binance Futures symbols + a reorderable favourites list
-      // (stored on this device). Tapping a coin runs `market <SYM>` in the console.
+      // ---- console ----
+      const cmdInput = $("cmd"), cmdOut = $("cmd-out"), cmdSpark = $("cmd-spark"), cmdConfirm = $("cmd-confirm");
+      let pendingConfirmId = null;
+      function sparkline(vals) {
+        if (!vals.length) return "";
+        const w = 280, h = 48, pad = 3, min = Math.min(0, ...vals), max = Math.max(0, ...vals), range = max - min || 1;
+        const y = (v) => h - pad - ((v - min) / range) * (h - 2 * pad);
+        const pts = vals.map((v, i) => `${(pad + (i / Math.max(1, vals.length - 1)) * (w - 2 * pad)).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+        const color = vals[vals.length - 1] >= 0 ? "#16a34a" : "#dc2626";
+        return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="margin-top:0.5rem"><line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="#8884" stroke-dasharray="3"/><polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
+      }
+      async function runCommand(command) {
+        if (!command.trim()) return;
+        cmdConfirm.classList.add("hidden"); cmdSpark.innerHTML = ""; pendingConfirmId = null; cmdOut.textContent = "…";
+        try {
+          const r = await fetch("/api/command", { method: "POST", headers: authHeaders(), body: JSON.stringify({ command }) });
+          const d = await r.json().catch(() => ({}));
+          cmdOut.textContent = d.output || d.error || `Failed (${r.status})`;
+          if (d.curve && d.curve.length) cmdSpark.innerHTML = sparkline(d.curve.map(Number));
+          if (d.confirm_id) { pendingConfirmId = d.confirm_id; cmdConfirm.classList.remove("hidden"); }
+        } catch (e) { cmdOut.textContent = "Network error"; }
+      }
+      async function resolveConfirm(cancel) {
+        if (!pendingConfirmId) return;
+        const id = pendingConfirmId; pendingConfirmId = null; cmdConfirm.classList.add("hidden");
+        cmdOut.textContent = cancel ? "Cancelling…" : "Placing…";
+        try {
+          const d = await (await fetch("/api/confirm", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id, cancel }) })).json();
+          cmdOut.textContent = d.output || d.error || "Failed";
+        } catch (e) { cmdOut.textContent = "Network error"; }
+      }
+      $("cmd-run").onclick = () => runCommand(cmdInput.value);
+      cmdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runCommand(cmdInput.value); });
+      $("cmd-yes").onclick = () => resolveConfirm(false);
+      $("cmd-no").onclick = () => resolveConfirm(true);
+      document.querySelectorAll(".chip[data-cmd]").forEach((c) => (c.onclick = () => { cmdInput.value = c.dataset.cmd; runCommand(c.dataset.cmd); }));
+
+      // ---- coins / favourites ----
       function getFavs() { try { return JSON.parse(localStorage.getItem("favs") || "[]"); } catch (_) { return []; } }
       function saveFavs(f) { localStorage.setItem("favs", JSON.stringify(f)); renderFavs(); }
-      function addFav(sym) { const f = getFavs(); if (!f.includes(sym)) { f.push(sym); saveFavs(f); } }
-      function removeFav(sym) { saveFavs(getFavs().filter((s) => s !== sym)); }
-      function moveFav(i, d) {
-        const f = getFavs(); const j = i + d;
-        if (j < 0 || j >= f.length) return;
-        [f[i], f[j]] = [f[j], f[i]]; saveFavs(f);
-      }
+      function addFav(s) { const f = getFavs(); if (!f.includes(s)) { f.push(s); saveFavs(f); } }
+      function removeFav(s) { saveFavs(getFavs().filter((x) => x !== s)); }
+      function moveFav(i, d) { const f = getFavs(), j = i + d; if (j < 0 || j >= f.length) return; [f[i], f[j]] = [f[j], f[i]]; saveFavs(f); }
       function renderFavs() {
-        const f = getFavs();
-        const box = document.getElementById("favs");
-        if (!f.length) { box.innerHTML = '<p style="color:#888;font-size:0.85rem">No favourites yet — search above and tap ☆.</p>'; return; }
-        box.innerHTML = f.map((s, i) =>
-          `<div class="profile"><span class="name" data-coin="${s}" style="cursor:pointer">${s}</span><span class="spacer"></span>` +
-          `<button class="ghost" data-up="${i}">↑</button><button class="ghost" data-down="${i}">↓</button><button class="ghost" data-rm="${s}">✕</button></div>`
-        ).join("");
-        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => { cmdInput.value = "market " + b.dataset.coin; runCommand(cmdInput.value); }));
+        const f = getFavs(), box = $("favs");
+        if (!box) return;
+        if (!f.length) { box.innerHTML = '<p style="font-size:0.85rem">No favourites yet — search above and tap ☆.</p>'; return; }
+        box.innerHTML = f.map((s, i) => `<div class="profile"><span class="name" data-coin="${s}" style="cursor:pointer">${s}</span><span class="spacer"></span><button class="ghost" data-up="${i}">↑</button><button class="ghost" data-down="${i}">↓</button><button class="ghost" data-rm="${s}">✕</button></div>`).join("");
+        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => { cmdInput.value = "market " + b.dataset.coin; showView("orders"); runCommand(cmdInput.value); }));
         box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.up, -1)));
         box.querySelectorAll("[data-down]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.down, 1)));
         box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => removeFav(b.dataset.rm)));
       }
-      let coinSearchTimer = null;
-      document.getElementById("coinSearch").addEventListener("input", (e) => {
-        clearTimeout(coinSearchTimer);
-        const q = e.target.value.trim();
-        coinSearchTimer = setTimeout(async () => {
-          const r = await fetch("/api/symbols?q=" + encodeURIComponent(q), { headers: authHeaders() });
-          const d = await r.json().catch(() => ({}));
-          const box = document.getElementById("coinResults");
+      let coinTimer = null;
+      $("coinSearch").addEventListener("input", (e) => {
+        clearTimeout(coinTimer); const q = e.target.value.trim();
+        coinTimer = setTimeout(async () => {
+          const d = await (await fetch("/api/symbols?q=" + encodeURIComponent(q), { headers: authHeaders() })).json();
+          const box = $("coinResults");
           box.innerHTML = (d.symbols || []).slice(0, 16).map((s) => `<button class="chip" data-add="${s}">☆ ${s}</button>`).join("");
           box.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => addFav(b.dataset.add)));
         }, 250);
       });
 
-      // Command console — single entry point. Runs the read/analysis commands
-      // against /api/command with the session JWT.
-      const cmdInput = document.getElementById("cmd");
-      const cmdOut = document.getElementById("cmd-out");
-      const cmdSpark = document.getElementById("cmd-spark");
-      const cmdConfirm = document.getElementById("cmd-confirm");
-      let pendingConfirmId = null;
-
-      function sparkline(vals) {
-        if (!vals.length) return "";
-        const w = 280, h = 48, pad = 3;
-        const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
-        const range = max - min || 1;
-        const y = (v) => h - pad - ((v - min) / range) * (h - 2 * pad);
-        const pts = vals.map((v, i) => `${(pad + (i / Math.max(1, vals.length - 1)) * (w - 2 * pad)).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-        const color = vals[vals.length - 1] >= 0 ? "#16a34a" : "#dc2626";
-        return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="margin-top:0.5rem">
-          <line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="#8884" stroke-dasharray="3"/>
-          <polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
+      // ---- history ----
+      async function loadHistory() {
+        try {
+          const d = await (await fetch("/api/history", { headers: authHeaders() })).json();
+          $("report").innerHTML = [
+            ["Trades", d.trades], ["Win rate", (d.win_rate ?? 0) + "%"], ["Total PnL", (d.total_pnl ?? 0) + " USDT"],
+            ["Wins / Losses", (d.wins ?? 0) + " / " + (d.losses ?? 0)], ["Expectancy", d.expectancy ?? 0],
+          ].map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join("");
+          const sym = d.by_symbol || {};
+          const keys = Object.keys(sym).sort((a, b) => Number(sym[b].total_pnl) - Number(sym[a].total_pnl));
+          $("bycoin").innerHTML = keys.length ? keys.map((s) => {
+            const g = sym[s], pos = Number(g.total_pnl) >= 0;
+            return `<div class="coincard"><div class="top"><span class="sym">${escapeHtml(s)}</span><span class="spacer" style="flex:1"></span><span class="pnl ${pos ? "pos" : "neg"}">${pos ? "+" : ""}${g.total_pnl} USDT</span></div><div class="sub"><span>Trades ${g.trades}</span><span>Win ${g.win_rate}%</span><span>${g.wins}W / ${g.losses}L</span></div></div>`;
+          }).join("") : '<p>No closed trades yet.</p>';
+        } catch (e) { $("report").textContent = "Could not load history."; $("bycoin").textContent = ""; }
       }
 
-      async function runCommand(command) {
-        if (!command.trim()) return;
-        cmdConfirm.style.display = "none";
-        cmdSpark.innerHTML = "";
-        pendingConfirmId = null;
-        cmdOut.textContent = "…";
-        try {
-          const r = await fetch("/api/command", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ command }),
-          });
-          const d = await r.json().catch(() => ({}));
-          cmdOut.textContent = d.output || d.error || `Failed (${r.status})`;
-          if (d.curve && d.curve.length) cmdSpark.innerHTML = sparkline(d.curve.map(Number));
-          if (d.confirm_id) {
-            pendingConfirmId = d.confirm_id;
-            cmdConfirm.style.display = "";
-          }
-        } catch (e) {
-          cmdOut.textContent = "Network error";
-        }
-      }
-      async function resolveConfirm(cancel) {
-        if (!pendingConfirmId) return;
-        const id = pendingConfirmId;
-        pendingConfirmId = null;
-        cmdConfirm.style.display = "none";
-        cmdOut.textContent = cancel ? "Cancelling…" : "Placing…";
-        try {
-          const r = await fetch("/api/confirm", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ id, cancel }),
-          });
-          const d = await r.json().catch(() => ({}));
-          cmdOut.textContent = d.output || d.error || `Failed (${r.status})`;
-        } catch (e) {
-          cmdOut.textContent = "Network error";
-        }
-      }
-      document.getElementById("cmd-yes").onclick = () => resolveConfirm(false);
-      document.getElementById("cmd-no").onclick = () => resolveConfirm(true);
-      document.getElementById("cmd-run").onclick = () => runCommand(cmdInput.value);
-      cmdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runCommand(cmdInput.value); });
-      document.querySelectorAll(".chip").forEach((chip) => {
-        chip.onclick = () => { cmdInput.value = chip.dataset.cmd; runCommand(chip.dataset.cmd); };
-      });
-
-      // Telegram Login Widget — the primary, one-click path. The widget invokes
-      // window.onTelegramAuth with the signed user object; the server verifies
-      // the Telegram signature and returns a JWT for identity "tg:<id>", the same
-      // identity the bot uses, so web and bot share one account.
-      window.onTelegramAuth = async (user) => {
-        const tgMsg = document.getElementById("tgMsg");
-        try {
-          const r = await fetch("/api/telegram-login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(user),
-          });
-          const d = await r.json().catch(() => ({}));
-          if (r.ok && d.token) {
-            localStorage.setItem("token", d.token);
-            onAuthed();
-          } else {
-            tgMsg.textContent = d.error || `Login failed (${r.status})`;
-            tgMsg.style.color = "#dc2626";
-          }
-        } catch (e) {
-          tgMsg.textContent = "Network error";
-          tgMsg.style.color = "#dc2626";
-        }
-      };
-      fetch("/api/auth-config")
-        .then((r) => r.json())
-        .then((cfg) => {
-          if (!cfg.telegram_login_enabled || !cfg.telegram_bot_username) return;
-          // Telegram available → make it primary, demote the password form.
-          document.getElementById("pwBox").appendChild(document.getElementById("pwForm"));
-          document.getElementById("tgLogin").style.display = "";
-          const s = document.createElement("script");
-          s.async = true;
-          s.src = "https://telegram.org/js/telegram-widget.js?22";
-          s.setAttribute("data-telegram-login", cfg.telegram_bot_username);
-          s.setAttribute("data-size", "large");
-          s.setAttribute("data-onauth", "onTelegramAuth(user)");
-          s.setAttribute("data-request-access", "write");
-          document.getElementById("tgWidget").appendChild(s);
-        })
-        .catch(() => {});
-      document.getElementById("saveKey").onclick = async () => {
-        const profile = document.getElementById("profName").value.trim() || "default";
-        const body = JSON.stringify({
-          profile,
-          api_key: document.getElementById("apiKey").value,
-          api_secret: document.getElementById("apiSecret").value,
-          testnet: document.getElementById("profNet").value === "true",
-        });
-        const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(), body });
-        const d = await r.json().catch(() => ({}));
-        keyMsg(r.ok ? `Saved profile "${profile}".` : d.error || "Failed", r.ok);
-        document.getElementById("apiKey").value = "";
-        document.getElementById("apiSecret").value = "";
-        refreshKeyStatus();
-      };
-
-      fetch("/api/report")
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then((d) => {
-          const rows = [
-            ["Trades", d.trades],
-            ["Win rate", d.win_rate + "%"],
-            ["Total PnL", d.total_pnl + " USDT"],
-            ["Wins / Losses", d.wins + " / " + d.losses],
-            ["Expectancy", d.expectancy],
-          ];
-          document.getElementById("report").innerHTML = rows
-            .map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`)
-            .join("");
-        })
-        .catch(() => {
-          document.getElementById("report").textContent = "No closed trades yet.";
-        });
-
-      // Live positions via Server-Sent Events — auto-connects with the session
-      // token once you log in (no manual entry). EventSource can't set an
-      // Authorization header, so the JWT goes as a ?token= query param.
+      // ---- live positions ----
       let stream = null;
-      const streamMsg = document.getElementById("stream-msg");
-      const streamFeed = document.getElementById("stream-feed");
-
-      function streamShow(text, ok) {
-        streamMsg.textContent = text;
-        streamMsg.style.color = ok ? "#16a34a" : "#dc2626";
-      }
+      function streamShow(t, ok) { $("stream-msg").textContent = t; $("stream-msg").style.color = ok ? "#16a34a" : "#888"; }
       function renderEvent(kind, e) {
-        let d = {};
-        try { d = JSON.parse(e.data); } catch (_) { return; }
+        let d = {}; try { d = JSON.parse(e.data); } catch (_) { return; }
         const when = new Date(d.at || Date.now()).toLocaleTimeString();
-        const label =
-          kind === "trade_closed"
-            ? `closed · PnL ${d.realized_pnl} USDT`
-            : `${d.side} ${d.amount} @ ${d.mark_price} · uPnL ${d.unrealized_pnl}`;
-        const row = document.createElement("div");
-        row.className = "row";
+        const label = kind === "trade_closed" ? `closed · PnL ${d.realized_pnl} USDT` : `${d.side} ${d.amount} @ ${d.mark_price} · uPnL ${d.unrealized_pnl}`;
+        const row = document.createElement("div"); row.className = "row";
         row.innerHTML = `<span>${when} · ${d.symbol}</span><strong>${label}</strong>`;
-        streamFeed.prepend(row);
-        while (streamFeed.childElementCount > 20) streamFeed.lastChild.remove();
+        $("stream-feed").prepend(row);
+        while ($("stream-feed").childElementCount > 20) $("stream-feed").lastChild.remove();
       }
       function connectStream() {
         const token = localStorage.getItem("token");
@@ -424,19 +372,17 @@
         stream.addEventListener("trade_closed", (e) => renderEvent("trade_closed", e));
       }
 
-      // Restore an existing session on load (after the stream code is defined).
-      if (localStorage.getItem("token")) onAuthed();
+      // ---- status ----
+      async function loadStatus() {
+        try {
+          const d = await (await fetch("/readyz")).json();
+          $("status").innerHTML = "<strong>Status</strong>" + Object.entries(d).map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join("");
+        } catch (e) {}
+      }
 
-      fetch("/readyz")
-        .then((r) => r.json())
-        .then((d) => {
-          document.getElementById("status").innerHTML = Object.entries(d)
-            .map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`)
-            .join("");
-        })
-        .catch(() => {
-          document.getElementById("status").textContent = "Status unavailable.";
-        });
+      // ---- boot ----
+      if (localStorage.getItem("token")) onAuthed();
+      else showView("login");
     </script>
   </body>
 </html>
