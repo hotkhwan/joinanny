@@ -49,9 +49,9 @@ func TestExecutorOpenPlacesEntryStopAndTakeProfitOrders(t *testing.T) {
 		"GET /fapi/v1/exchangeInfo",
 		"POST /fapi/v1/marginType",
 		"POST /fapi/v1/leverage",
-		"POST /fapi/v1/order",
-		"POST /fapi/v1/order",
-		"POST /fapi/v1/order",
+		"POST /fapi/v1/order",     // entry (LIMIT) stays on the classic endpoint
+		"POST /fapi/v1/algoOrder", // stop loss (conditional)
+		"POST /fapi/v1/algoOrder", // take profit (conditional)
 	}
 	if len(requests) != len(wantPaths) {
 		t.Fatalf("requests = %v, want %v", requests, wantPaths)
@@ -71,13 +71,18 @@ func TestExecutorOpenPlacesEntryStopAndTakeProfitOrders(t *testing.T) {
 	}
 
 	stop := requests[4].Query
-	if stop.Get("type") != "STOP_MARKET" || stop.Get("closePosition") != "true" {
-		t.Fatalf("stop query = %s, want close-position stop", stop.Encode())
+	if stop.Get("algoType") != "CONDITIONAL" || stop.Get("type") != "STOP_MARKET" ||
+		stop.Get("closePosition") != "true" || stop.Get("triggerPrice") == "" {
+		t.Fatalf("stop query = %s, want conditional close-position STOP_MARKET with triggerPrice", stop.Encode())
+	}
+	if stop.Get("clientAlgoId") == "" || stop.Get("stopPrice") != "" {
+		t.Fatalf("stop query = %s, want clientAlgoId and no legacy stopPrice", stop.Encode())
 	}
 
 	takeProfit := requests[5].Query
-	if takeProfit.Get("type") != "TAKE_PROFIT_MARKET" || takeProfit.Get("closePosition") != "true" {
-		t.Fatalf("take-profit query = %s, want close-position take profit", takeProfit.Encode())
+	if takeProfit.Get("algoType") != "CONDITIONAL" || takeProfit.Get("type") != "TAKE_PROFIT_MARKET" ||
+		takeProfit.Get("closePosition") != "true" || takeProfit.Get("triggerPrice") == "" {
+		t.Fatalf("take-profit query = %s, want conditional close-position TAKE_PROFIT_MARKET with triggerPrice", takeProfit.Encode())
 	}
 }
 
@@ -216,6 +221,13 @@ func newBinanceTestServer(t *testing.T) *binanceTestServer {
 			server.mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"clientOrderId":"` + r.URL.Query().Get("newClientOrderId") + `","orderId":` + strconvInt64(orderID) + `,"symbol":"BTCUSDT","status":"NEW","type":"` + r.URL.Query().Get("type") + `"}`))
+		case "/fapi/v1/algoOrder":
+			server.mu.Lock()
+			server.orderID++
+			algoID := server.orderID
+			server.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"clientAlgoId":"` + r.URL.Query().Get("clientAlgoId") + `","algoId":` + strconvInt64(algoID) + `,"symbol":"BTCUSDT","algoStatus":"NEW","type":"` + r.URL.Query().Get("type") + `"}`))
 		case "/fapi/v3/positionRisk":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[{"symbol":"BTCUSDT","positionAmt":"0.010","entryPrice":"67500.0","markPrice":"68000.50","unRealizedProfit":"5.50","leverage":"3","marginType":"isolated","positionSide":"BOTH"},{"symbol":"ETHUSDT","positionAmt":"0","entryPrice":"0","markPrice":"0","unRealizedProfit":"0","leverage":"2","marginType":"isolated","positionSide":"BOTH"}]`))

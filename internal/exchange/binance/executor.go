@@ -184,27 +184,33 @@ func (e *Executor) executeOpen(ctx context.Context, confirmation orders.Confirma
 		return orders.ExecutionResult{}, fmt.Errorf("place entry order: %w", err)
 	}
 
-	stopOrder, err := e.newOrder(ctx, url.Values{
-		"symbol":           {intent.Symbol},
-		"side":             {exitSide},
-		"type":             {"STOP_MARKET"},
-		"stopPrice":        {stopLoss.String()},
-		"closePosition":    {"true"},
-		"workingType":      {"MARK_PRICE"},
-		"newClientOrderId": {clientOrderID(confirmation.ID, "sl")},
+	// Conditional orders (STOP_MARKET / TAKE_PROFIT_MARKET) moved to the Algo
+	// Order endpoint on 2025-12-09; /fapi/v1/order now rejects them with -4120.
+	// Params differ from the classic endpoint: algoType, triggerPrice (not
+	// stopPrice), clientAlgoId (not newClientOrderId).
+	stopOrder, err := e.newAlgoOrder(ctx, url.Values{
+		"symbol":        {intent.Symbol},
+		"side":          {exitSide},
+		"algoType":      {"CONDITIONAL"},
+		"type":          {"STOP_MARKET"},
+		"triggerPrice":  {stopLoss.String()},
+		"closePosition": {"true"},
+		"workingType":   {"MARK_PRICE"},
+		"clientAlgoId":  {clientOrderID(confirmation.ID, "sl")},
 	})
 	if err != nil {
 		return orders.ExecutionResult{}, fmt.Errorf("place stop loss order: %w", err)
 	}
 
-	takeProfitOrder, err := e.newOrder(ctx, url.Values{
-		"symbol":           {intent.Symbol},
-		"side":             {exitSide},
-		"type":             {"TAKE_PROFIT_MARKET"},
-		"stopPrice":        {takeProfit.String()},
-		"closePosition":    {"true"},
-		"workingType":      {"MARK_PRICE"},
-		"newClientOrderId": {clientOrderID(confirmation.ID, "tp")},
+	takeProfitOrder, err := e.newAlgoOrder(ctx, url.Values{
+		"symbol":        {intent.Symbol},
+		"side":          {exitSide},
+		"algoType":      {"CONDITIONAL"},
+		"type":          {"TAKE_PROFIT_MARKET"},
+		"triggerPrice":  {takeProfit.String()},
+		"closePosition": {"true"},
+		"workingType":   {"MARK_PRICE"},
+		"clientAlgoId":  {clientOrderID(confirmation.ID, "tp")},
 	})
 	if err != nil {
 		return orders.ExecutionResult{}, fmt.Errorf("place take profit order: %w", err)
@@ -220,10 +226,10 @@ func (e *Executor) executeOpen(ctx context.Context, confirmation orders.Confirma
 			quantity.String(),
 			entryOrder.ClientOrderID,
 			entryOrder.OrderID,
-			stopOrder.ClientOrderID,
-			stopOrder.OrderID,
-			takeProfitOrder.ClientOrderID,
-			takeProfitOrder.OrderID,
+			stopOrder.ClientAlgoID,
+			stopOrder.AlgoID,
+			takeProfitOrder.ClientAlgoID,
+			takeProfitOrder.AlgoID,
 		),
 	}, nil
 }
@@ -437,6 +443,14 @@ func (e *Executor) newOrder(ctx context.Context, params url.Values) (orderRespon
 	return response, nil
 }
 
+func (e *Executor) newAlgoOrder(ctx context.Context, params url.Values) (algoOrderResponse, error) {
+	var response algoOrderResponse
+	if err := e.signedRequest(ctx, http.MethodPost, "/fapi/v1/algoOrder", params, &response); err != nil {
+		return algoOrderResponse{}, err
+	}
+	return response, nil
+}
+
 func (e *Executor) positionRisk(ctx context.Context, symbol string) ([]positionRisk, error) {
 	params := url.Values{}
 	if symbol != "" {
@@ -631,6 +645,16 @@ type orderResponse struct {
 	Symbol        string `json:"symbol"`
 	Status        string `json:"status"`
 	Type          string `json:"type"`
+}
+
+// algoOrderResponse is the response shape of /fapi/v1/algoOrder, which uses
+// algoId/clientAlgoId/algoStatus rather than the classic order fields.
+type algoOrderResponse struct {
+	ClientAlgoID string `json:"clientAlgoId"`
+	AlgoID       int64  `json:"algoId"`
+	Symbol       string `json:"symbol"`
+	AlgoStatus   string `json:"algoStatus"`
+	Type         string `json:"type"`
 }
 
 type positionRisk struct {
