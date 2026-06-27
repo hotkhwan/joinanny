@@ -164,6 +164,10 @@ type AuthConfig struct {
 	EncryptionKeyID string
 	EncryptionKey   []byte
 	Enabled         bool
+	// TokenSecret signs session JWTs (AUTH_JWT_SECRET, base64, >= 32 bytes).
+	// Empty disables session tokens (login still works but returns no token).
+	TokenSecret []byte
+	TokenTTL    time.Duration
 }
 
 type ValidationError struct {
@@ -283,6 +287,8 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.Auth.EncryptionKeyID = reader.string("CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
 	cfg.Auth.EncryptionKey = reader.base64("CREDENTIAL_ENCRYPTION_KEY")
 	cfg.Auth.Enabled = len(cfg.Auth.EncryptionKey) > 0
+	cfg.Auth.TokenSecret = reader.base64("AUTH_JWT_SECRET")
+	cfg.Auth.TokenTTL = reader.seconds("AUTH_JWT_TTL_SECONDS", 24*time.Hour)
 
 	validate(cfg, &reader.problems)
 
@@ -484,6 +490,9 @@ func validate(cfg Config, problems *[]string) {
 			addProblem(problems, fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY must decode (base64) to exactly %d bytes for AES-256", auth.KeySize))
 		}
 		requireNonEmpty(problems, "CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
+	}
+	if len(cfg.Auth.TokenSecret) > 0 && len(cfg.Auth.TokenSecret) < auth.MinSecretSize {
+		addProblem(problems, fmt.Sprintf("AUTH_JWT_SECRET must decode (base64) to at least %d bytes", auth.MinSecretSize))
 	}
 }
 

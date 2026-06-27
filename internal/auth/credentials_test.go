@@ -10,17 +10,17 @@ import (
 // memRepo is an in-memory CredentialRepository for network-free tests. It also
 // lets tests inspect exactly what would be persisted at rest.
 type memRepo struct {
-	saved map[int64]BinanceCredential
+	saved map[string]BinanceCredential
 }
 
-func newMemRepo() *memRepo { return &memRepo{saved: map[int64]BinanceCredential{}} }
+func newMemRepo() *memRepo { return &memRepo{saved: map[string]BinanceCredential{}} }
 
 func (r *memRepo) Save(_ context.Context, cred BinanceCredential) error {
 	r.saved[cred.UserID] = cred
 	return nil
 }
 
-func (r *memRepo) Find(_ context.Context, userID int64) (BinanceCredential, error) {
+func (r *memRepo) Find(_ context.Context, userID string) (BinanceCredential, error) {
 	cred, ok := r.saved[userID]
 	if !ok {
 		return BinanceCredential{}, ErrNoCredential
@@ -28,7 +28,7 @@ func (r *memRepo) Find(_ context.Context, userID int64) (BinanceCredential, erro
 	return cred, nil
 }
 
-func (r *memRepo) Remove(_ context.Context, userID int64) error {
+func (r *memRepo) Remove(_ context.Context, userID string) error {
 	delete(r.saved, userID)
 	return nil
 }
@@ -48,11 +48,11 @@ func TestCredentialStoreLoadRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	want := BinanceKeys{APIKey: "pubkey-123", APISecret: "secret-abc", Testnet: true}
 
-	if err := svc.Store(ctx, 42, want); err != nil {
+	if err := svc.Store(ctx, "42", want); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 
-	got, err := svc.Load(ctx, 42)
+	got, err := svc.Load(ctx, "42")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestCredentialStoredEncryptedAtRest(t *testing.T) {
 	svc, repo := newTestService(t)
 	keys := BinanceKeys{APIKey: "pubkey-plain", APISecret: "secret-plain"}
 
-	if err := svc.Store(context.Background(), 7, keys); err != nil {
+	if err := svc.Store(context.Background(), "7", keys); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 
-	cred := repo.saved[7]
+	cred := repo.saved["7"]
 	if cred.APIKey.IsZero() || cred.APISecret.IsZero() {
 		t.Fatal("credential stored without sealed key material")
 	}
@@ -85,10 +85,10 @@ func TestCredentialStoreValidatesInput(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 
-	if err := svc.Store(ctx, 0, BinanceKeys{APIKey: "k", APISecret: "s"}); err == nil {
+	if err := svc.Store(ctx, "", BinanceKeys{APIKey: "k", APISecret: "s"}); err == nil {
 		t.Fatal("Store accepted a non-positive user id")
 	}
-	if err := svc.Store(ctx, 1, BinanceKeys{APIKey: "  ", APISecret: "s"}); err == nil {
+	if err := svc.Store(ctx, "1", BinanceKeys{APIKey: "  ", APISecret: "s"}); err == nil {
 		t.Fatal("Store accepted a blank api key")
 	}
 }
@@ -96,7 +96,7 @@ func TestCredentialStoreValidatesInput(t *testing.T) {
 func TestCredentialLoadMissingReturnsSentinel(t *testing.T) {
 	svc, _ := newTestService(t)
 
-	_, err := svc.Load(context.Background(), 999)
+	_, err := svc.Load(context.Background(), "999")
 	if !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("Load error = %v, want ErrNoCredential", err)
 	}
@@ -106,13 +106,13 @@ func TestCredentialDelete(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 
-	if err := svc.Store(ctx, 5, BinanceKeys{APIKey: "k", APISecret: "s"}); err != nil {
+	if err := svc.Store(ctx, "5", BinanceKeys{APIKey: "k", APISecret: "s"}); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	if err := svc.Delete(ctx, 5); err != nil {
+	if err := svc.Delete(ctx, "5"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := svc.Load(ctx, 5); !errors.Is(err, ErrNoCredential) {
+	if _, err := svc.Load(ctx, "5"); !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("after delete Load error = %v, want ErrNoCredential", err)
 	}
 }

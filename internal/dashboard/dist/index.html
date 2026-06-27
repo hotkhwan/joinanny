@@ -41,6 +41,20 @@
         <div class="msg" id="msg"></div>
       </section>
 
+      <section class="card" id="keysCard" style="display:none">
+        <strong>Binance API key (testnet)</strong>
+        <p style="margin:0.3rem 0 0">Get one at Binance → API Management → enable <b>Futures</b>, disable <b>Withdrawals</b>. <span id="keyStatus"></span></p>
+        <label for="apiKey">API key</label>
+        <input id="apiKey" autocomplete="off" />
+        <label for="apiSecret">API secret</label>
+        <input id="apiSecret" type="password" autocomplete="off" />
+        <div class="actions">
+          <button class="primary" id="saveKey">Save key</button>
+          <button class="ghost" id="delKey">Remove</button>
+        </div>
+        <div class="msg" id="keyMsg"></div>
+      </section>
+
       <section class="card">
         <strong>Performance</strong>
         <div id="report">Loading…</div>
@@ -78,6 +92,10 @@
           const d = await r.json().catch(() => ({}));
           if (r.ok) {
             show(`Welcome, ${d.username} (${d.role || "user"})`, true);
+            if (d.token) {
+              localStorage.setItem("token", d.token);
+              onAuthed();
+            }
           } else {
             show(d.error || `Failed (${r.status})`, false);
           }
@@ -87,6 +105,47 @@
       }
       document.getElementById("register").onclick = () => submit("/api/register");
       document.getElementById("login").onclick = () => submit("/api/login");
+
+      function authHeaders() {
+        const t = localStorage.getItem("token");
+        return t ? { Authorization: "Bearer " + t, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+      }
+      function keyMsg(text, ok) {
+        const el = document.getElementById("keyMsg");
+        el.textContent = text;
+        el.style.color = ok ? "#16a34a" : "#dc2626";
+      }
+      async function refreshKeyStatus() {
+        try {
+          const r = await fetch("/api/credentials", { headers: authHeaders() });
+          const d = await r.json();
+          document.getElementById("keyStatus").textContent = d.configured
+            ? `Configured (${d.api_key_tail || "set"}${d.testnet ? ", testnet" : ""}).`
+            : "Not configured yet.";
+        } catch (e) {}
+      }
+      function onAuthed() {
+        document.getElementById("keysCard").style.display = "";
+        refreshKeyStatus();
+      }
+      document.getElementById("saveKey").onclick = async () => {
+        const body = JSON.stringify({
+          api_key: document.getElementById("apiKey").value,
+          api_secret: document.getElementById("apiSecret").value,
+          testnet: true,
+        });
+        const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(), body });
+        const d = await r.json().catch(() => ({}));
+        keyMsg(r.ok ? "Saved." : d.error || "Failed", r.ok);
+        document.getElementById("apiSecret").value = "";
+        refreshKeyStatus();
+      };
+      document.getElementById("delKey").onclick = async () => {
+        const r = await fetch("/api/credentials", { method: "DELETE", headers: authHeaders() });
+        keyMsg(r.ok ? "Removed." : "Failed", r.ok);
+        refreshKeyStatus();
+      };
+      if (localStorage.getItem("token")) onAuthed();
 
       fetch("/api/report")
         .then((r) => (r.ok ? r.json() : Promise.reject()))
