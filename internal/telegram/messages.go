@@ -17,6 +17,10 @@ Status:
 /status
 status
 
+Market data (free Binance order-flow the AI reads):
+/market BTC
+/market ETHUSDT
+
 Phase 2 management:
 be BTC
 move sl BTC to be

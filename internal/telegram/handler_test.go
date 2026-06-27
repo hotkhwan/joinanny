@@ -11,6 +11,7 @@ import (
 
 	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
 
@@ -29,6 +30,38 @@ func TestHandlerRejectsUnauthorizedUser(t *testing.T) {
 
 	if len(sender.messages) != 0 {
 		t.Fatalf("sent messages = %d, want 0", len(sender.messages))
+	}
+}
+
+func TestHandlerMarketCommand(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger()).WithMarketData(marketdata.MockProvider{
+		FundingValue:   marketdata.Funding{MarkPrice: decimal.MustParse("68000"), LastFundingRate: decimal.MustParse("0.0001")},
+		OIValue:        marketdata.OpenInterest{OpenInterest: decimal.MustParse("104625")},
+		LongShortValue: marketdata.LongShortRatio{Ratio: decimal.MustParse("1.98"), LongAccount: decimal.MustParse("0.66"), ShortAccount: decimal.MustParse("0.34")},
+		TakerValue:     marketdata.TakerFlow{BuySellRatio: decimal.MustParse("1.97")},
+	}, "5m")
+	sender := &fakeSender{}
+
+	// "/market eth" should normalise to ETHUSDT and report the metrics.
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/market eth")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	got := sender.singleMessage(t)
+	for _, want := range []string{"ETHUSDT", "Funding rate: 0.0001", "Open interest: 104625", "Long/Short accounts: 1.98", "Taker buy/sell: 1.97"} {
+		if !strings.Contains(got.Text, want) {
+			t.Fatalf("market message missing %q: %q", want, got.Text)
+		}
+	}
+}
+
+func TestHandlerMarketCommandWithoutProvider(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+	sender := &fakeSender{}
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/market")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if got := sender.singleMessage(t); !strings.Contains(got.Text, "not configured") {
+		t.Fatalf("message = %q, want not-configured notice", got.Text)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/parser"
 	"bottrade/internal/plans"
@@ -30,7 +31,21 @@ type Handler struct {
 	orderService  *orders.Service
 	statusService *orders.StatusService
 	planService   *plans.Service
+	marketData    marketdata.Provider
+	marketPeriod  string
 	logger        *slog.Logger
+}
+
+// WithMarketData attaches a market-data provider so the /market command can
+// report live Binance order-flow (funding, OI, long/short, taker). Returns the
+// handler for chaining. When unset, /market replies that it is unavailable.
+func (h *Handler) WithMarketData(provider marketdata.Provider, period string) *Handler {
+	if strings.TrimSpace(period) == "" {
+		period = "5m"
+	}
+	h.marketData = provider
+	h.marketPeriod = period
+	return h
 }
 
 func NewHandler(adminUserID int64, allowedUserIDs []int64, logger *slog.Logger) *Handler {
@@ -112,6 +127,8 @@ func (h *Handler) Handle(ctx context.Context, sender Sender, update *models.Upda
 		return h.sendText(ctx, sender, message.Chat.ID, HelpText)
 	case "/status":
 		return h.sendStatus(ctx, sender, message.Chat.ID)
+	case "/market":
+		return h.sendMarket(ctx, sender, message.Chat.ID, commandArg(text))
 	}
 
 	intent, err := h.parser.Parse(text)
@@ -243,6 +260,64 @@ func commandName(text string) string {
 	}
 
 	return first
+}
+
+// commandArg returns the first argument after the command word, or "".
+func commandArg(text string) string {
+	_, rest, found := strings.Cut(strings.TrimSpace(text), " ")
+	if !found {
+		return ""
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+	return strings.TrimSpace(first)
+}
+
+// marketSymbol normalises a /market argument into a Binance symbol, defaulting
+// to BTCUSDT and appending USDT when only the base asset is given.
+func marketSymbol(arg string) string {
+	value := strings.ToUpper(strings.TrimSpace(arg))
+	value = strings.ReplaceAll(value, "/", "")
+	if value == "" {
+		return "BTCUSDT"
+	}
+	if !strings.HasSuffix(value, "USDT") {
+		value += "USDT"
+	}
+	return value
+}
+
+func (h *Handler) sendMarket(ctx context.Context, sender Sender, chatID int64, arg string) error {
+	if h.marketData == nil {
+		return h.sendText(ctx, sender, chatID, "Market data is not configured.")
+	}
+	symbol := marketSymbol(arg)
+	snapshot, err := marketdata.Collect(ctx, h.marketData, symbol, h.marketPeriod, time.Now().UTC())
+	if err != nil && snapshot.Funding.MarkPrice.IsZero() && snapshot.OpenInterest.OpenInterest.IsZero() &&
+		snapshot.LongShort.Ratio.IsZero() && snapshot.Taker.BuySellRatio.IsZero() {
+		h.logger.Warn("market data fetch failed", "symbol", symbol, "error", err)
+		return h.sendText(ctx, sender, chatID, "Could not fetch market data for "+symbol+".")
+	}
+	return h.sendText(ctx, sender, chatID, formatMarketSnapshot(snapshot))
+}
+
+func formatMarketSnapshot(s marketdata.Snapshot) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "📊 %s market data (%s)", s.Symbol, s.Period)
+	if s.Funding.MarkPrice.IsPositive() {
+		fmt.Fprintf(&b, "\nMark price: %s", s.Funding.MarkPrice.String())
+		fmt.Fprintf(&b, "\nFunding rate: %s (per 8h)", s.Funding.LastFundingRate.String())
+	}
+	if s.OpenInterest.OpenInterest.IsPositive() {
+		fmt.Fprintf(&b, "\nOpen interest: %s", s.OpenInterest.OpenInterest.String())
+	}
+	if s.LongShort.Ratio.IsPositive() {
+		fmt.Fprintf(&b, "\nLong/Short accounts: %s (long %s / short %s)",
+			s.LongShort.Ratio.String(), s.LongShort.LongAccount.String(), s.LongShort.ShortAccount.String())
+	}
+	if s.Taker.BuySellRatio.IsPositive() {
+		fmt.Fprintf(&b, "\nTaker buy/sell: %s", s.Taker.BuySellRatio.String())
+	}
+	return b.String()
 }
 
 func confirmationKeyboard(id string) models.ReplyMarkup {

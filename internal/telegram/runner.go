@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"bottrade/internal/config"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
 
@@ -31,6 +32,9 @@ func NewPollingRunner(cfg config.Config, orderService *orders.Service, statusSer
 		planService = plans.NewService(nil)
 	}
 	handler := NewHandlerWithServicesAndPlans(cfg.Telegram.AdminUserID, cfg.Telegram.AllowedUserIDs, cfg.App.MaxLeverage, orderService, statusService, planService, logger)
+	if cfg.AI.MarketDataEnabled {
+		handler.WithMarketData(marketdata.NewBinanceProvider(cfg.AI.MarketDataBaseURL, nil), cfg.AI.MarketDataPeriod)
+	}
 	b, err := tgbot.New(
 		cfg.Telegram.BotToken,
 		tgbot.WithDefaultHandler(handler.BotHandler),
