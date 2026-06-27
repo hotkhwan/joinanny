@@ -395,13 +395,28 @@ func validate(cfg Config, problems *[]string) {
 	}
 
 	if cfg.AI.Enabled {
-		if cfg.AI.Provider != "openai_compatible" {
-			addProblem(problems, "AI_PROVIDER must be disabled or openai_compatible")
-		}
-		requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
-		requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
-		if !validHTTPURL(cfg.AI.BaseURL) {
-			addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+		if len(cfg.AI.Providers) > 0 {
+			// Ensemble mode: validate each panel member instead of the single
+			// AI_PROVIDER block.
+			for i, provider := range cfg.AI.Providers {
+				if provider.Provider != "anthropic" && provider.Provider != "openai_compatible" {
+					addProblem(problems, fmt.Sprintf("AI_PROVIDERS[%d].provider must be anthropic or openai_compatible", i))
+				}
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].api_key", i), provider.APIKey)
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].model", i), provider.Model)
+			}
+			if !oneOf(cfg.AI.EnsemblePolicy, "", "majority", "consensus") {
+				addProblem(problems, "AI_ENSEMBLE_POLICY must be majority or consensus")
+			}
+		} else {
+			if cfg.AI.Provider != "openai_compatible" && cfg.AI.Provider != "anthropic" {
+				addProblem(problems, "AI_PROVIDER must be disabled, openai_compatible, or anthropic")
+			}
+			requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
+			requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
+			if !validHTTPURL(cfg.AI.BaseURL) {
+				addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+			}
 		}
 		if cfg.AI.RequestTimeout <= 0 {
 			addProblem(problems, "AI_REQUEST_TIMEOUT_SECONDS must be greater than 0")
