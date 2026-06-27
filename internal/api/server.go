@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"bottrade/internal/config"
 	"bottrade/internal/dashboard"
 	"bottrade/internal/journal"
+	"bottrade/internal/realtime"
 	"bottrade/internal/signals"
 	"bottrade/internal/users"
 
@@ -37,6 +39,12 @@ const (
 	webhookRateWindow = time.Minute
 )
 
+// eventStream is the slice of the realtime broadcaster the SSE endpoint needs.
+// *realtime.Broadcaster satisfies it.
+type eventStream interface {
+	Subscribe() (<-chan realtime.Event, func())
+}
+
 type Server struct {
 	cfg         config.Config
 	processor   *signals.Processor
@@ -44,6 +52,7 @@ type Server struct {
 	report      *journal.Service
 	tokenizer   *auth.Tokenizer
 	credentials *auth.CredentialService
+	stream      eventStream
 	logger      *slog.Logger
 	app         *fiber.App
 }
@@ -70,6 +79,12 @@ func WithReport(svc *journal.Service) Option {
 // WithCredentials enables the /api/credentials endpoints (per-user Binance keys).
 func WithCredentials(svc *auth.CredentialService) Option {
 	return func(s *Server) { s.credentials = svc }
+}
+
+// WithRealtime enables the GET /api/stream SSE endpoint, fed by the realtime
+// position broadcaster.
+func WithRealtime(stream eventStream) Option {
+	return func(s *Server) { s.stream = stream }
 }
 
 func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Logger, opts ...Option) *Server {
@@ -124,6 +139,7 @@ func (s *Server) routes() {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 	s.app.Get("/status", s.handleStatus)
+	s.app.Get("/api/stream", s.handleStream)
 
 	// Account registration / login. Rate-limited because they are public and
 	// password-checking. Disabled (501) when no user service is wired.
@@ -194,6 +210,69 @@ func (s *Server) handleStatus(c fiber.Ctx) error {
 		"ai":          s.cfg.AI.Enabled,
 		"autotrade":   s.cfg.AI.AutoTradeEnabled,
 		"dry_run":     s.cfg.App.DryRun,
+	})
+}
+
+// handleStream serves realtime position events as Server-Sent Events. It is
+// gated by the same bearer status token as /status (position data must not be
+// public); when no token is configured or no broadcaster is wired the endpoint
+// is disabled (404). The stream sends each event as `event: <type>\ndata: <json>`
+// and a heartbeat comment every 15s so a dead connection surfaces a write error.
+func (s *Server) handleStream(c fiber.Ctx) error {
+	if s.stream == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "realtime stream is disabled"})
+	}
+	token := s.cfg.HTTP.StatusToken
+	if token == "" {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "realtime stream is disabled"})
+	}
+	// The browser EventSource API cannot set an Authorization header, so the
+	// stream also accepts the token as a ?token= query param. Constant-time
+	// compare either way.
+	provided := bearerToken(c)
+	if provided == "" {
+		provided = strings.TrimSpace(c.Query("token"))
+	}
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+		s.logger.Warn("stream endpoint rejected")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	c.Set(fiber.HeaderContentType, "text/event-stream")
+	c.Set(fiber.HeaderCacheControl, "no-cache")
+	c.Set(fiber.HeaderConnection, "keep-alive")
+
+	events, cancel := s.stream.Subscribe()
+	return c.SendStreamWriter(func(w *bufio.Writer) {
+		defer cancel()
+		heartbeat := time.NewTicker(15 * time.Second)
+		defer heartbeat.Stop()
+
+		if _, err := w.WriteString(": connected\n\n"); err != nil || w.Flush() != nil {
+			return
+		}
+		for {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				data, err := json.Marshal(event)
+				if err != nil {
+					continue
+				}
+				if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data); err != nil {
+					return
+				}
+				if w.Flush() != nil {
+					return
+				}
+			case <-heartbeat.C:
+				if _, err := w.WriteString(": ping\n\n"); err != nil || w.Flush() != nil {
+					return
+				}
+			}
+		}
 	})
 }
 

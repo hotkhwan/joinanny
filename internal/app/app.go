@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"bottrade/internal/ai"
@@ -15,9 +16,11 @@ import (
 	binanceexec "bottrade/internal/exchange/binance"
 	"bottrade/internal/journal"
 	"bottrade/internal/logging"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/monitor"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
+	"bottrade/internal/realtime"
 	"bottrade/internal/signals"
 	mongostore "bottrade/internal/storage/mongo"
 	"bottrade/internal/telegram"
@@ -100,10 +103,15 @@ func (a *App) Run(ctx context.Context) error {
 
 	signalProcessor := a.newSignalProcessor(orderService, signalStore)
 	a.startMonitor(ctx, trailExchange)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	errCh := make(chan error, 2)
 	if a.cfg.HTTP.Enabled {
-		server := api.NewServer(a.cfg, signalProcessor, a.logger, a.serverOptions(signalStore)...)
+		opts := a.serverOptions(signalStore)
+		if broadcaster != nil {
+			opts = append(opts, api.WithRealtime(broadcaster))
+		}
+		server := api.NewServer(a.cfg, signalProcessor, a.logger, opts...)
 		go func() {
 			if err := server.Run(ctx); err != nil {
 				errCh <- err
@@ -128,6 +136,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 
 	if a.cfg.HTTP.Enabled {
 		go func() {
@@ -165,6 +174,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	defer cleanup()
 
 	a.startMonitor(ctx, trailExchange)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	if a.cfg.Telegram.Mode != config.TelegramModePolling {
 		a.logger.Info("telegram mode is not polling; worker idle until shutdown", "telegram_mode", a.cfg.Telegram.Mode)
@@ -176,6 +186,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
 
 	return runner.Run(ctx)
 }
@@ -201,6 +212,41 @@ func (a *App) startMonitor(ctx context.Context, trailExchange monitor.Exchange) 
 	}()
 }
 
+// startRealtime launches the realtime position gateway when enabled and a live
+// position source is available, returning the broadcaster that the SSE endpoint
+// and Telegram push subscribe to. Returns nil when realtime is off or the bot is
+// in dry-run (no live positions to stream).
+func (a *App) startRealtime(ctx context.Context, positionSource realtime.PositionSource) *realtime.Broadcaster {
+	if !a.cfg.App.RealtimeEnabled {
+		a.logger.Info("realtime gateway disabled (REALTIME_ENABLED=false)")
+		return nil
+	}
+	if positionSource == nil {
+		a.logger.Info("realtime gateway idle (no live position source; dry-run)")
+		return nil
+	}
+	broadcaster := realtime.NewBroadcaster(0)
+	gateway := realtime.NewGateway(realtime.GatewayConfig{
+		UserID:   a.cfg.Telegram.AdminUserID,
+		Interval: time.Duration(a.cfg.App.RealtimePollSeconds) * time.Second,
+	}, positionSource, broadcaster, a.logger)
+	go func() {
+		if err := gateway.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Error("realtime gateway stopped", "error", err)
+		}
+	}()
+	return broadcaster
+}
+
+// positionSourceOf adapts the trailing exchange into a realtime position source,
+// returning nil when there is no live exchange (dry-run).
+func positionSourceOf(trailExchange monitor.Exchange) realtime.PositionSource {
+	if trailExchange == nil {
+		return nil
+	}
+	return trailExchange
+}
+
 func (a *App) trailPolicy() (monitor.TrailPolicy, bool) {
 	activate, err1 := decimal.Parse(a.cfg.App.TrailActivatePct)
 	gap, err2 := decimal.Parse(a.cfg.App.TrailGapPct)
@@ -222,15 +268,20 @@ func (a *App) RunAPI(ctx context.Context) error {
 
 	a.logBootstrap("api")
 
-	orderService, _, _, signalStore, _, cleanup, err := a.newTradingServices(ctx)
+	orderService, _, _, signalStore, trailExchange, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	processor := a.newSignalProcessor(orderService, signalStore)
+	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
-	server := api.NewServer(a.cfg, processor, a.logger, a.serverOptions(signalStore)...)
+	opts := a.serverOptions(signalStore)
+	if broadcaster != nil {
+		opts = append(opts, api.WithRealtime(broadcaster))
+	}
+	server := api.NewServer(a.cfg, processor, a.logger, opts...)
 	return server.Run(ctx)
 }
 
@@ -345,7 +396,35 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 	return orderService, statusService, planService, store, trailExchange, cleanup, nil
 }
 
-func (a *App) buildEnsemble() signals.Advisor {
+// buildEnricher assembles the context Aggregator that feeds the AI prompt. In
+// Phase 1 that is the free Binance Futures order-flow (funding, open interest,
+// long/short ratio, taker buy/sell). Returns nil when market-data enrichment is
+// off, in which case advisors decide from the raw signal alone.
+func (a *App) buildEnricher() ai.ContextEnricher {
+	if !a.cfg.AI.MarketDataEnabled {
+		return nil
+	}
+	provider := marketdata.NewBinanceProvider(a.cfg.AI.MarketDataBaseURL, nil)
+	contextProviders := []ai.ContextProvider{
+		ai.NewOrderFlowProvider(provider, a.cfg.AI.MarketDataPeriod),
+		ai.NewIndicatorProvider(provider, a.cfg.AI.KlineInterval, 0),
+	}
+	if a.cfg.AI.FearGreedEnabled {
+		contextProviders = append(contextProviders, ai.NewFearGreedProvider(a.cfg.AI.FearGreedBaseURL, nil))
+	}
+	if strings.TrimSpace(a.cfg.AI.NewsAPIKey) != "" {
+		contextProviders = append(contextProviders, ai.NewNewsProvider(a.cfg.AI.NewsAPIKey, a.cfg.AI.NewsBaseURL, 5, nil))
+	}
+	a.logger.Info("market-data enrichment enabled",
+		"sources", "binance_orderflow+binance_ta", "base_url", a.cfg.AI.MarketDataBaseURL,
+		"period", a.cfg.AI.MarketDataPeriod, "kline_interval", a.cfg.AI.KlineInterval)
+	return ai.NewAggregator(ai.AggregatorConfig{
+		Providers: contextProviders,
+		Logger:    a.logger,
+	})
+}
+
+func (a *App) buildEnsemble(enricher ai.ContextEnricher) signals.Advisor {
 	specs := make([]ai.ProviderSpec, 0, len(a.cfg.AI.Providers))
 	for _, p := range a.cfg.AI.Providers {
 		specs = append(specs, ai.ProviderSpec{
@@ -356,7 +435,7 @@ func (a *App) buildEnsemble() signals.Advisor {
 			Model:    p.Model,
 		})
 	}
-	advisor, err := ai.BuildEnsemble(specs, a.cfg.AI.EnsemblePolicy, a.cfg.AI.EnsembleMinVotes, a.cfg.AI.RequestTimeout, nil)
+	advisor, err := ai.BuildEnsemble(specs, a.cfg.AI.EnsemblePolicy, a.cfg.AI.EnsembleMinVotes, a.cfg.AI.RequestTimeout, enricher)
 	if err != nil {
 		a.logger.Warn("ai ensemble build failed; AI disabled", "error", err)
 		return nil
@@ -368,8 +447,9 @@ func (a *App) buildEnsemble() signals.Advisor {
 func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signals.SignalStore) *signals.Processor {
 	var advisor signals.Advisor
 	if a.cfg.AI.Enabled {
+		enricher := a.buildEnricher()
 		if len(a.cfg.AI.Providers) > 0 {
-			advisor = a.buildEnsemble()
+			advisor = a.buildEnsemble(enricher)
 		} else {
 			switch a.cfg.AI.Provider {
 			case "openai_compatible":
@@ -379,6 +459,7 @@ func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signa
 					Model:          a.cfg.AI.Model,
 					SystemPrompt:   a.cfg.AI.SystemPrompt,
 					RequestTimeout: a.cfg.AI.RequestTimeout,
+					Enricher:       enricher,
 				})
 			case "anthropic":
 				advisor = ai.NewAnthropicAdvisor(ai.AnthropicConfig{
@@ -387,6 +468,7 @@ func (a *App) newSignalProcessor(orderService *orders.Service, signalStore signa
 					Model:          a.cfg.AI.Model,
 					SystemPrompt:   a.cfg.AI.SystemPrompt,
 					RequestTimeout: a.cfg.AI.RequestTimeout,
+					Enricher:       enricher,
 				})
 			default:
 				a.logger.Warn("ai provider is not supported", "provider", a.cfg.AI.Provider)
