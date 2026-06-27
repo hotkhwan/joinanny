@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -104,6 +105,20 @@ type AIConfig struct {
 	RequestTimeout       time.Duration
 	MinConfidencePercent int
 	AutoTradeEnabled     bool
+	// Ensemble (multi-AI panel). When Providers is non-empty the signal
+	// processor uses the panel instead of the single Provider above.
+	Providers        []AIProvider
+	EnsemblePolicy   string // "majority" | "consensus"
+	EnsembleMinVotes int
+}
+
+// AIProvider is one member of the AI ensemble, parsed from AI_PROVIDERS (JSON).
+type AIProvider struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"` // "anthropic" | "openai_compatible"
+	APIKey   string `json:"api_key"`
+	BaseURL  string `json:"base_url"`
+	Model    string `json:"model"`
 }
 
 type StripeConfig struct {
@@ -213,6 +228,12 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.AI.MinConfidencePercent = reader.int("AI_MIN_CONFIDENCE_PERCENT", cfg.AI.MinConfidencePercent)
 	cfg.AI.AutoTradeEnabled = reader.bool("AI_AUTOTRADE_ENABLED", cfg.AI.AutoTradeEnabled)
 	cfg.AI.Enabled = reader.bool("AI_ENABLED", cfg.AI.Provider != "disabled" || anySet(cfg.AI.APIKey, cfg.AI.Model))
+	cfg.AI.Providers = reader.aiProviders("AI_PROVIDERS")
+	cfg.AI.EnsemblePolicy = strings.ToLower(reader.string("AI_ENSEMBLE_POLICY", cfg.AI.EnsemblePolicy))
+	cfg.AI.EnsembleMinVotes = reader.int("AI_ENSEMBLE_MIN_VOTES", cfg.AI.EnsembleMinVotes)
+	if len(cfg.AI.Providers) > 0 {
+		cfg.AI.Enabled = true
+	}
 
 	cfg.MongoDB.URI = reader.string("MONGODB_URI", cfg.MongoDB.URI)
 	cfg.MongoDB.Database = reader.string("MONGODB_DATABASE", cfg.MongoDB.Database)
@@ -474,6 +495,19 @@ func (r *envReader) seconds(name string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Second
+}
+
+func (r *envReader) aiProviders(name string) []AIProvider {
+	raw, ok := r.lookup(name)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var providers []AIProvider
+	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
+		r.add("%s must be a JSON array of {name,provider,api_key,base_url,model}", name)
+		return nil
+	}
+	return providers
 }
 
 func (r *envReader) base64(name string) []byte {
