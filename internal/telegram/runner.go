@@ -69,12 +69,25 @@ type RealtimeStream interface {
 	Subscribe() (<-chan realtime.Event, func())
 }
 
+// isNilStream reports whether stream is nil — including a typed-nil
+// *realtime.Broadcaster, which is a non-nil interface wrapping a nil pointer and
+// would otherwise pass a plain `== nil` check and panic on first use.
+func isNilStream(stream RealtimeStream) bool {
+	if stream == nil {
+		return true
+	}
+	if b, ok := stream.(*realtime.Broadcaster); ok {
+		return b == nil
+	}
+	return false
+}
+
 // StartRealtime pushes realtime trade-closed alerts to the admin chat in the
 // background. Only closes are pushed (not every price tick) so the chat is not
 // flooded; the web SSE stream carries the high-frequency updates. A nil stream
-// or zero chat id is a no-op.
+// (including a typed-nil *Broadcaster) or zero chat id is a no-op.
 func (r *PollingRunner) StartRealtime(ctx context.Context, stream RealtimeStream, chatID int64) {
-	if stream == nil || chatID == 0 {
+	if chatID == 0 || isNilStream(stream) {
 		return
 	}
 	events, cancel := stream.Subscribe()

@@ -1,12 +1,26 @@
 package telegram
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"bottrade/internal/decimal"
 	"bottrade/internal/realtime"
 )
+
+func TestStartRealtimeIgnoresTypedNilBroadcaster(t *testing.T) {
+	// Regression: a nil *realtime.Broadcaster passed into the RealtimeStream
+	// interface parameter is a non-nil interface wrapping a nil pointer. It must
+	// be treated as no-op, not panic on Subscribe.
+	runner := &PollingRunner{logger: testLogger()}
+	var nilBroadcaster *realtime.Broadcaster
+	runner.StartRealtime(context.Background(), nilBroadcaster, 12345) // must not panic
+
+	// A genuinely nil interface and a zero chat id are also no-ops.
+	runner.StartRealtime(context.Background(), nil, 12345)
+	runner.StartRealtime(context.Background(), realtime.NewBroadcaster(0), 0)
+}
 
 func TestFormatRealtimeAlertOnlyPushesCloses(t *testing.T) {
 	// A position update (price tick) must not be pushed to Telegram.

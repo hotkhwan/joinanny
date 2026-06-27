@@ -136,7 +136,12 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
+	// Guard on the concrete pointer: a nil *Broadcaster passed into the
+	// RealtimeStream interface parameter would be a non-nil interface holding a
+	// nil pointer, defeating StartRealtime's own nil check and panicking.
+	if broadcaster != nil {
+		runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
+	}
 
 	if a.cfg.HTTP.Enabled {
 		go func() {
@@ -186,7 +191,12 @@ func (a *App) RunWorker(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
+	// Guard on the concrete pointer: a nil *Broadcaster passed into the
+	// RealtimeStream interface parameter would be a non-nil interface holding a
+	// nil pointer, defeating StartRealtime's own nil check and panicking.
+	if broadcaster != nil {
+		runner.StartRealtime(ctx, broadcaster, a.cfg.Telegram.AdminUserID)
+	}
 
 	return runner.Run(ctx)
 }
