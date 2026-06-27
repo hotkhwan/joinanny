@@ -248,6 +248,8 @@ func (e *Executor) executeClose(ctx context.Context, confirmation orders.Confirm
 	}
 
 	responses := make([]orderResponse, 0, len(positions))
+	realized := decimal.Zero()
+	var closedSymbol, closedSide string
 	for _, position := range positions {
 		if intent.Symbol != "" && position.Symbol != intent.Symbol {
 			continue
@@ -282,8 +284,14 @@ func (e *Executor) executeClose(ctx context.Context, confirmation orders.Confirm
 		}
 
 		side := "SELL"
+		closedSide = "long"
 		if amount.Cmp(decimal.Zero()) < 0 {
 			side = "BUY"
+			closedSide = "short"
+		}
+		closedSymbol = position.Symbol
+		if profit, perr := decimal.Parse(defaultDecimalString(position.UnrealizedProfit)); perr == nil {
+			realized = realized.Add(profit)
 		}
 
 		response, err := e.newOrder(ctx, url.Values{
@@ -312,6 +320,9 @@ func (e *Executor) executeClose(ctx context.Context, confirmation orders.Confirm
 	return orders.ExecutionResult{
 		Mode:          e.mode(),
 		ClientOrderID: responses[0].ClientOrderID,
+		Symbol:        closedSymbol,
+		Side:          closedSide,
+		RealizedPnL:   realized,
 		Message:       strings.ToUpper(e.mode()) + " close submitted.\n\n" + orders.Summary(confirmation.Intent) + "\n\nOrders:\n" + strings.Join(lines, "\n"),
 	}, nil
 }

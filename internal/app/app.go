@@ -11,6 +11,7 @@ import (
 	"bottrade/internal/api"
 	"bottrade/internal/config"
 	binanceexec "bottrade/internal/exchange/binance"
+	"bottrade/internal/journal"
 	"bottrade/internal/logging"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
@@ -248,10 +249,15 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 		positionProvider = binanceExecutor
 	}
 
+	var tradeJournal orders.TradeJournal
+	if journalService, err := journal.NewService(store.Journal()); err == nil {
+		tradeJournal = journalService
+	}
 	orderService := orders.NewServiceWithRepositories(a.cfg.App.ConfirmationTTL, executor, orders.ServiceDependencies{
 		ConfirmationStore: store,
 		IntentStore:       store,
 		AuditRecorder:     store,
+		Journal:           tradeJournal,
 	}, a.logger)
 	statusService := orders.NewStatusService(positionProvider)
 	planService := plans.NewService(store)

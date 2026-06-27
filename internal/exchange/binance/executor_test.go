@@ -189,6 +189,10 @@ func TestExecutorClosePlacesReduceOnlyMarketOrder(t *testing.T) {
 	if !strings.Contains(result.Message, "close submitted") {
 		t.Fatalf("Message = %q, want close summary", result.Message)
 	}
+	// The close result must carry the realized PnL / symbol / side for the journal.
+	if result.Symbol != "BTCUSDT" || result.Side != "long" || result.RealizedPnL.String() != "5.5" {
+		t.Fatalf("close result = {sym:%q side:%q pnl:%s}, want BTCUSDT long 5.5", result.Symbol, result.Side, result.RealizedPnL.String())
+	}
 
 	requests := server.Requests()
 	closeOrder := requests[len(requests)-1].Query
