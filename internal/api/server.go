@@ -216,27 +216,34 @@ func (s *Server) handleStatus(c fiber.Ctx) error {
 	})
 }
 
-// handleStream serves realtime position events as Server-Sent Events. It is
-// gated by the same bearer status token as /status (position data must not be
-// public); when no token is configured or no broadcaster is wired the endpoint
-// is disabled (404). The stream sends each event as `event: <type>\ndata: <json>`
-// and a heartbeat comment every 15s so a dead connection surfaces a write error.
+// handleStream serves realtime position events as Server-Sent Events. Access is
+// granted to any logged-in user (a valid session JWT) — so the dashboard
+// auto-connects after login with no extra step — or, for ops, the bearer status
+// token. The endpoint is disabled (404) when no broadcaster is wired or neither
+// auth method is configured. The browser EventSource API cannot set an
+// Authorization header, so the credential is also accepted as a ?token= query
+// param. Each event is `event: <type>\ndata: <json>`; a 15s heartbeat surfaces a
+// dead connection.
 func (s *Server) handleStream(c fiber.Ctx) error {
 	if s.stream == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "realtime stream is disabled"})
 	}
-	token := s.cfg.HTTP.StatusToken
-	if token == "" {
+	statusToken := s.cfg.HTTP.StatusToken
+	if statusToken == "" && s.tokenizer == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "realtime stream is disabled"})
 	}
-	// The browser EventSource API cannot set an Authorization header, so the
-	// stream also accepts the token as a ?token= query param. Constant-time
-	// compare either way.
+
 	provided := bearerToken(c)
 	if provided == "" {
 		provided = strings.TrimSpace(c.Query("token"))
 	}
-	if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+	authorized := statusToken != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(statusToken)) == 1
+	if !authorized && s.tokenizer != nil {
+		if _, err := s.tokenizer.Verify(provided); err == nil {
+			authorized = true
+		}
+	}
+	if !authorized {
 		s.logger.Warn("stream endpoint rejected")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}

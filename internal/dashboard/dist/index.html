@@ -73,13 +73,7 @@
 
       <section class="card">
         <strong>Live positions</strong>
-        <label for="stream-token">Status token</label>
-        <input id="stream-token" type="password" placeholder="HTTP_STATUS_TOKEN" />
-        <div class="actions">
-          <button class="primary" id="stream-connect">Connect</button>
-          <button class="ghost" id="stream-disconnect">Disconnect</button>
-        </div>
-        <div class="msg" id="stream-msg"></div>
+        <div class="msg" id="stream-msg">Log in to see live positions.</div>
         <div id="stream-feed"></div>
       </section>
 
@@ -139,6 +133,7 @@
         document.getElementById("authCard").style.display = "none";
         document.getElementById("keysCard").style.display = "";
         refreshKeyStatus();
+        connectStream();
       }
 
       // Telegram Login Widget — the primary, one-click path. The widget invokes
@@ -200,7 +195,6 @@
         keyMsg(r.ok ? "Removed." : "Failed", r.ok);
         refreshKeyStatus();
       };
-      if (localStorage.getItem("token")) onAuthed();
 
       fetch("/api/report")
         .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -220,14 +214,12 @@
           document.getElementById("report").textContent = "No closed trades yet.";
         });
 
-      // Live positions via Server-Sent Events. The browser EventSource cannot
-      // set an Authorization header, so the status token is passed as a query
-      // param (it is the owner's own token on the owner's dashboard).
+      // Live positions via Server-Sent Events — auto-connects with the session
+      // token once you log in (no manual entry). EventSource can't set an
+      // Authorization header, so the JWT goes as a ?token= query param.
       let stream = null;
       const streamMsg = document.getElementById("stream-msg");
       const streamFeed = document.getElementById("stream-feed");
-      const tokenInput = document.getElementById("stream-token");
-      tokenInput.value = localStorage.getItem("statusToken") || "";
 
       function streamShow(text, ok) {
         streamMsg.textContent = text;
@@ -247,21 +239,18 @@
         streamFeed.prepend(row);
         while (streamFeed.childElementCount > 20) streamFeed.lastChild.remove();
       }
-      document.getElementById("stream-connect").onclick = () => {
-        const token = tokenInput.value.trim();
-        if (!token) { streamShow("Enter the status token first.", false); return; }
-        localStorage.setItem("statusToken", token);
-        if (stream) stream.close();
+      function connectStream() {
+        const token = localStorage.getItem("token");
+        if (!token || stream) return;
         stream = new EventSource("/api/stream?token=" + encodeURIComponent(token));
-        stream.onopen = () => streamShow("Connected.", true);
-        stream.onerror = () => streamShow("Disconnected (check token / dry-run).", false);
+        stream.onopen = () => streamShow("Watching live positions…", true);
+        stream.onerror = () => streamShow("No live feed yet (open a position, or enable testnet trading).", false);
         stream.addEventListener("position_update", (e) => renderEvent("position_update", e));
         stream.addEventListener("trade_closed", (e) => renderEvent("trade_closed", e));
-      };
-      document.getElementById("stream-disconnect").onclick = () => {
-        if (stream) { stream.close(); stream = null; }
-        streamShow("Disconnected.", true);
-      };
+      }
+
+      // Restore an existing session on load (after the stream code is defined).
+      if (localStorage.getItem("token")) onAuthed();
 
       fetch("/readyz")
         .then((r) => r.json())
