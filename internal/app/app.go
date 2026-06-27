@@ -102,7 +102,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	errCh := make(chan error, 2)
 	if a.cfg.HTTP.Enabled {
-		server := api.NewServer(a.cfg, signalProcessor, a.logger, a.userOptions(signalStore)...)
+		server := api.NewServer(a.cfg, signalProcessor, a.logger, a.serverOptions(signalStore)...)
 		go func() {
 			if err := server.Run(ctx); err != nil {
 				errCh <- err
@@ -229,24 +229,32 @@ func (a *App) RunAPI(ctx context.Context) error {
 
 	processor := a.newSignalProcessor(orderService, signalStore)
 
-	server := api.NewServer(a.cfg, processor, a.logger, a.userOptions(signalStore)...)
+	server := api.NewServer(a.cfg, processor, a.logger, a.serverOptions(signalStore)...)
 	return server.Run(ctx)
 }
 
-// userOptions wires the registration/login service. It persists to MongoDB when
-// the trading store is MongoDB-backed (accounts survive restarts), and falls
-// back to an in-memory store otherwise.
-func (a *App) userOptions(signalStore signals.SignalStore) []api.Option {
+// serverOptions wires the api server's optional services: registration/login
+// and the trade-journal report. Both persist to MongoDB when the trading store
+// is MongoDB-backed; registration falls back to in-memory otherwise.
+func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
+	opts := []api.Option{}
+
 	var repo users.Repository = users.NewMemoryRepository()
 	if store, ok := signalStore.(*mongostore.Store); ok {
 		repo = store.Users()
 	}
-	service, err := users.NewService(repo)
-	if err != nil {
+	if userService, err := users.NewService(repo); err == nil {
+		opts = append(opts, api.WithUsers(userService))
+	} else {
 		a.logger.Warn("user service unavailable; registration disabled", "error", err)
-		return nil
 	}
-	return []api.Option{api.WithUsers(service)}
+
+	if store, ok := signalStore.(*mongostore.Store); ok {
+		if reportService, err := journal.NewService(store.Journal()); err == nil {
+			opts = append(opts, api.WithReport(reportService))
+		}
+	}
+	return opts
 }
 
 func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.StatusService, *plans.Service, signals.SignalStore, monitor.Exchange, func(), error) {
