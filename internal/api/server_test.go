@@ -301,9 +301,30 @@ func TestAuthConfigAndTelegramLogin(t *testing.T) {
 	}
 
 	// Tampered field → 401.
-	valid["id"] = "99"
-	if code, _ := post(valid); code != http.StatusUnauthorized {
+	tampered := signLoginWidget("123:abc", map[string]string{
+		"id": "42", "username": "bob", "auth_date": fmt.Sprint(time.Now().Unix()),
+	})
+	tampered["id"] = "99"
+	if code, _ := post(tampered); code != http.StatusUnauthorized {
 		t.Fatalf("tampered login = %d, want 401", code)
+	}
+
+	// The real Login Widget sends id and auth_date as JSON numbers, not strings.
+	// The handler must accept that (UseNumber) and still verify.
+	authDate := fmt.Sprint(time.Now().Unix())
+	signed := signLoginWidget("123:abc", map[string]string{"id": "42", "username": "bob", "auth_date": authDate})
+	rawBody := fmt.Sprintf(`{"id":42,"username":"bob","auth_date":%s,"hash":%q}`, authDate, signed["hash"])
+	req2 := httptest.NewRequest(http.MethodPost, "/api/telegram-login", strings.NewReader(rawBody))
+	req2.Header.Set("Content-Type", "application/json")
+	r2, err := server.App().Test(req2)
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	defer r2.Body.Close()
+	var out2 map[string]any
+	json.NewDecoder(r2.Body).Decode(&out2)
+	if r2.StatusCode != http.StatusOK || out2["id"] != "tg:42" {
+		t.Fatalf("numeric-id login = %d %+v, want 200 tg:42", r2.StatusCode, out2)
 	}
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -431,9 +432,30 @@ func (s *Server) handleTelegramLogin(c fiber.Ctx) error {
 	if s.tokenizer == nil {
 		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "auth is not enabled"})
 	}
-	var fields map[string]string
-	if err := json.Unmarshal(c.Body(), &fields); err != nil {
+	// The Telegram Login Widget sends a mixed-type object (id and auth_date are
+	// numbers, the rest strings). Decode with UseNumber so a number keeps its
+	// exact original text — the signature is computed over those exact values, so
+	// reformatting them (e.g. via float64) would break verification.
+	decoder := json.NewDecoder(bytes.NewReader(c.Body()))
+	decoder.UseNumber()
+	var raw map[string]any
+	if err := decoder.Decode(&raw); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	}
+	fields := make(map[string]string, len(raw))
+	for key, value := range raw {
+		switch v := value.(type) {
+		case string:
+			fields[key] = v
+		case json.Number:
+			fields[key] = v.String()
+		case bool:
+			fields[key] = strconv.FormatBool(v)
+		case nil:
+			// skip null fields (e.g. absent photo_url)
+		default:
+			fields[key] = fmt.Sprintf("%v", v)
+		}
 	}
 	user, err := auth.VerifyTelegramLoginWidget(fields, s.cfg.Telegram.BotToken, 24*time.Hour, time.Now())
 	if err != nil {
