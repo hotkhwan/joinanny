@@ -95,8 +95,9 @@ func (s *Server) handleGoalRun(c fiber.Ctx) error {
 		interval = "1h"
 	}
 	strategy := "ema"
-	if req.Strategy == "rsi" {
-		strategy = "rsi"
+	switch req.Strategy {
+	case "rsi", "macd", "sma", "breakout":
+		strategy = req.Strategy
 	}
 	bars := req.Bars
 	switch {
