@@ -320,6 +320,13 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 		if reportService, err := journal.NewService(store.Journal()); err == nil {
 			opts = append(opts, api.WithReport(reportService))
 		}
+		opts = append(opts, api.WithGoalStore(newMongoGoalRuns(store.GoalRunsCollection())))
+	}
+
+	// Optional: let the goal/paper endpoints ask the AI advisor for a directional
+	// lean. Nil (AI disabled) is fine — runs fall back to the rule-based strategy.
+	if advisor := a.buildAdvisor(); advisor != nil {
+		opts = append(opts, api.WithAdvisor(advisor))
 	}
 
 	if len(a.cfg.Auth.TokenSecret) > 0 {

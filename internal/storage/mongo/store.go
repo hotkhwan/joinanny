@@ -25,6 +25,14 @@ type Store struct {
 	users         *mongodriver.Collection
 	journalTrades *mongodriver.Collection
 	credentials   *mongodriver.Collection
+	goalRuns      *mongodriver.Collection
+}
+
+// GoalRunsCollection exposes the goal_runs collection so the app layer can wire
+// a paper-goal history store without this package depending on the transport
+// layer's record type.
+func (s *Store) GoalRunsCollection() *mongodriver.Collection {
+	return s.goalRuns
 }
 
 func Connect(ctx context.Context, cfg Config) (*Store, error) {
@@ -57,6 +65,7 @@ func Connect(ctx context.Context, cfg Config) (*Store, error) {
 		users:         db.Collection("users"),
 		journalTrades: db.Collection("journal_trades"),
 		credentials:   db.Collection("binance_credentials"),
+		goalRuns:      db.Collection("goal_runs"),
 	}
 	if err := store.ensureIndexes(ctx); err != nil {
 		_ = client.Disconnect(ctx)
@@ -131,6 +140,27 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("create order intent indexes: %w", err)
+	}
+
+	_, err = s.goalRuns.Indexes().CreateMany(ctx, []mongodriver.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "user_key", Value: 1},
+				{Key: "created_at", Value: -1},
+			},
+			Options: options.Index().SetName("goalrun_user_created_at"),
+		},
+		{
+			// Paper runs are experimental stats, not records of truth — expire
+			// them after 90 days so the collection cannot grow unbounded.
+			Keys: bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().
+				SetName("goalrun_created_at_ttl").
+				SetExpireAfterSeconds(90 * 24 * 60 * 60),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create goal run indexes: %w", err)
 	}
 
 	_, err = s.signals.Indexes().CreateMany(ctx, []mongodriver.IndexModel{

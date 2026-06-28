@@ -59,6 +59,17 @@ type TakerFlow struct {
 	At           time.Time       `json:"at"`
 }
 
+// Candle is one OHLC kline. Values are float64 because they feed advisory
+// indicators and paper-trading simulation — never live order sizing.
+type Candle struct {
+	OpenTime time.Time `json:"open_time"`
+	Open     float64   `json:"open"`
+	High     float64   `json:"high"`
+	Low      float64   `json:"low"`
+	Close    float64   `json:"close"`
+	Volume   float64   `json:"volume"`
+}
+
 // Ticker is the last traded price and 24h price-change percent for a symbol —
 // the lightweight quote the dashboard shows next to favourites.
 type Ticker struct {

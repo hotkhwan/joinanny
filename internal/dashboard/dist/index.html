@@ -62,6 +62,19 @@
       .fav .px .chg { font-size: 0.72rem; }
       .fav .iconbtn { flex: 0 0 auto; width: auto; padding: 0.3rem 0.5rem; background: #8882; color: inherit; font-weight: 600; }
       .up { color: #16a34a; } .down { color: #dc2626; }
+      .gai { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: inherit; margin: 0.2rem 0; }
+      .gai input { width: auto; }
+      .statgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.8rem; }
+      .stat { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.6rem; text-align: center; }
+      .stat .k { font-size: 0.72rem; color: #888; }
+      .stat .v { font-weight: 700; font-size: 1.05rem; margin-top: 0.15rem; }
+      .verdict { margin-top: 0.6rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: #8881; font-weight: 600; text-align: center; }
+      .trade { display: flex; gap: 0.5rem; align-items: center; padding: 0.35rem 0; border-bottom: 1px solid #8881; font-size: 0.82rem; }
+      .trade:last-child { border-bottom: 0; }
+      .trade .tside { font-weight: 700; text-transform: uppercase; }
+      .trade .tpnl { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+      .grun { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.5rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.82rem; display: flex; gap: 0.5rem; align-items: center; }
+      .grun .gp { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
       .hidden { display: none; }
     </style>
   </head>
@@ -143,6 +156,33 @@
             <button class="primary" id="t-review" type="button">Review order</button>
             <div class="msg" id="t-msg"></div>
           </div>
+        </div>
+
+        <div class="card">
+          <strong>Goal — paper test on real data</strong>
+          <p style="margin:0.3rem 0 0.6rem">Set a profit goal; it runs your strategy over real Binance candles and shows the real stats. No orders are placed.</p>
+          <div class="ticket">
+            <div class="grid2">
+              <div><label for="g-profit">Profit target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
+              <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="g-risk">Max risk (% of capital)</label><input id="g-risk" inputmode="numeric" placeholder="30" value="30" autocomplete="off" /></div>
+              <div><label for="g-symbol">Symbol</label><input id="g-symbol" placeholder="BTC" value="BTC" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="g-strategy">Strategy</label><select id="g-strategy"><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option></select></div>
+              <div><label for="g-interval">Timeframe</label><select id="g-interval"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
+            </div>
+            <label class="gai"><input type="checkbox" id="g-ai" /> Let AI pick the side (per run)</label>
+            <button class="primary" id="g-run" type="button">Run goal</button>
+            <div class="msg" id="g-msg"></div>
+          </div>
+          <pre id="g-out" class="output hidden"></pre>
+          <div id="g-spark"></div>
+          <div id="g-stats" class="statgrid hidden"></div>
+          <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
+          <div id="g-history" style="margin-top:0.9rem"></div>
         </div>
 
         <div class="card">
@@ -274,6 +314,7 @@
         connectStream();
         renderFavs();
         startPricePolling();
+        loadGoalHistory();
         loadStatus();
       }
       $("logout").onclick = () => {
@@ -497,6 +538,62 @@
         ticketMsg(""); cmdInput.value = cmd; runCommand(cmd);
         $("cmd-out").scrollIntoView({ behavior: "smooth", block: "nearest" });
       };
+
+      // ---- goal (paper backtest on real data) ----
+      function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function fmtPnl(v) { const n = Number(v) || 0; return (n >= 0 ? "+" : "") + (Math.round(n * 100) / 100); }
+      function verdictText(v) {
+        return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: max drawdown", max_trades: "⏹ Stopped: max trades", continue: "Ran out of history before a stop rule" })[v] || v || "";
+      }
+      function renderGoalResult(d) {
+        const st = d.stats || {};
+        $("g-out").textContent = d.output || ""; $("g-out").classList.remove("hidden");
+        $("g-spark").innerHTML = (d.curve && d.curve.length) ? sparkline(d.curve.map(Number)) : "";
+        const pnl = Number(st.realized_pnl || 0);
+        const cells = [
+          ["Trades", st.trades || 0], ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%"],
+          ["W / L", (st.wins || 0) + " / " + (st.losses || 0)], ["PnL", fmtPnl(pnl) + " USDT"],
+          ["Target", (st.profit_target || "0") + " USDT"], ["Risk", (st.risk_pct || 0) + "%"],
+        ];
+        $("g-stats").innerHTML = cells.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v ${k === "PnL" ? (pnl >= 0 ? "up" : "down") : ""}">${escapeHtml(String(v))}</div></div>`).join("")
+          + `<div class="verdict" style="grid-column:1/-1">${escapeHtml(verdictText(st.verdict))}</div>`;
+        $("g-stats").classList.remove("hidden");
+        const trades = d.trades || [];
+        $("g-trades").innerHTML = trades.length
+          ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:#888">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
+          : "<p style='font-size:0.85rem'>No trades.</p>";
+        $("g-tradeswrap").classList.toggle("hidden", trades.length === 0);
+        if (d.ai) goalMsg(d.ai, true);
+      }
+      async function runGoal() {
+        goalMsg("Running on real candles…", true);
+        $("g-run").disabled = true;
+        const body = {
+          profit: $("g-profit").value, capital: $("g-capital").value,
+          risk: parseInt($("g-risk").value, 10) || 30, symbol: $("g-symbol").value,
+          strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked,
+        };
+        try {
+          const r = await fetch("/api/goal/run", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
+          if (!d.ai) goalMsg("");
+          renderGoalResult(d); loadGoalHistory();
+        } catch (e) { goalMsg("Network error"); }
+        finally { $("g-run").disabled = false; }
+      }
+      $("g-run").onclick = runGoal;
+      async function loadGoalHistory() {
+        try {
+          const d = await (await fetch("/api/goal/history", { headers: authHeaders() })).json();
+          const runs = d.runs || [];
+          if (!runs.length) { $("g-history").innerHTML = ""; return; }
+          $("g-history").innerHTML = "<label>Recent runs</label>" + runs.slice(0, 8).map((x) => {
+            const pnl = Number(x.realized_pnl || 0);
+            return `<div class="grun"><span><b>${escapeHtml(x.symbol)}</b> ${escapeHtml(x.strategy)}${x.used_ai ? " · AI" : ""}</span><span style="color:#888">${Math.round(x.win_rate_pct || 0)}% · ${x.trades}t</span><span class="gp ${pnl >= 0 ? "up" : "down"}">${fmtPnl(pnl)}</span></div>`;
+          }).join("");
+        } catch (e) {}
+      }
 
       // ---- history ----
       async function loadHistory() {

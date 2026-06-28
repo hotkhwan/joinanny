@@ -60,6 +60,8 @@ type Server struct {
 	market      *marketdata.BinanceProvider
 	orders      *orders.Service
 	parser      parser.Parser
+	advisor     signals.Advisor
+	goalRuns    GoalRunStore
 	logger      *slog.Logger
 	app         *fiber.App
 }
@@ -100,6 +102,18 @@ func WithOrders(svc *orders.Service) Option {
 	return func(s *Server) { s.orders = svc }
 }
 
+// WithAdvisor lets the goal/paper endpoints ask an AI advisor for a directional
+// lean. It is optional: when nil, goal runs use the rule-based strategy only.
+func WithAdvisor(a signals.Advisor) Option {
+	return func(s *Server) { s.advisor = a }
+}
+
+// WithGoalStore persists paper goal runs so the dashboard can show accumulated
+// real stats. When unset, NewServer installs an in-memory store (per process).
+func WithGoalStore(store GoalRunStore) Option {
+	return func(s *Server) { s.goalRuns = store }
+}
+
 func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Logger, opts ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -118,6 +132,9 @@ func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Log
 	}
 	for _, opt := range opts {
 		opt(server)
+	}
+	if server.goalRuns == nil {
+		server.goalRuns = newMemGoalRuns(200)
 	}
 	server.routes()
 	return server
@@ -173,6 +190,8 @@ func (s *Server) routes() {
 	s.app.Post("/api/confirm", s.requireAuth, s.handleConfirm)
 	s.app.Get("/api/symbols", s.requireAuth, s.handleSymbols)
 	s.app.Get("/api/prices", s.requireAuth, s.handlePrices)
+	s.app.Post("/api/goal/run", s.requireAuth, s.handleGoalRun)
+	s.app.Get("/api/goal/history", s.requireAuth, s.handleGoalHistory)
 	s.app.Get("/api/history", s.requireAuth, s.handleHistory)
 	s.app.Post("/api/credentials", s.requireAuth, s.handleStoreCredential)
 	s.app.Get("/api/credentials", s.requireAuth, s.handleGetCredential)

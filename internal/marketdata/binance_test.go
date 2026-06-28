@@ -141,6 +141,24 @@ func TestBinanceProviderCloses(t *testing.T) {
 	}
 }
 
+func TestBinanceProviderCandles(t *testing.T) {
+	candles, err := newStubBinance(t).Candles(context.Background(), "BTCUSDT", "1h", 200)
+	if err != nil {
+		t.Fatalf("Candles: %v", err)
+	}
+	if len(candles) != 3 {
+		t.Fatalf("want 3 candles, got %d: %+v", len(candles), candles)
+	}
+	// Second stub row: [2,"10.5","12","10","11.0","120",3]
+	c := candles[1]
+	if c.Open != 10.5 || c.High != 12 || c.Low != 10 || c.Close != 11.0 || c.Volume != 120 {
+		t.Fatalf("candle[1] = %+v", c)
+	}
+	if c.OpenTime.IsZero() {
+		t.Fatal("candle open time not parsed")
+	}
+}
+
 func TestBinanceProviderInvalidPeriodDefaultsTo5m(t *testing.T) {
 	if got := validPeriod("90m"); got != "5m" {
 		t.Fatalf("validPeriod(90m) = %q, want 5m", got)

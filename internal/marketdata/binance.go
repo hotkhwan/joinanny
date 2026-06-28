@@ -303,6 +303,62 @@ func (p *BinanceProvider) Closes(ctx context.Context, symbol, interval string, l
 	return closes, nil
 }
 
+// Candles returns the most recent `limit` OHLC klines for a symbol/interval,
+// oldest first. It backs paper-trading simulation, which resolves wins/losses
+// from real intrabar highs and lows (whether stop-loss or take-profit was hit
+// first), so it needs full candles, not just closes.
+func (p *BinanceProvider) Candles(ctx context.Context, symbol, interval string, limit int) ([]Candle, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	params := url.Values{
+		"symbol":   {symbol},
+		"interval": {interval},
+		"limit":    {strconv.Itoa(limit)},
+	}
+	var rows [][]any
+	if err := p.get(ctx, "/fapi/v1/klines", params, &rows); err != nil {
+		return nil, err
+	}
+	candles := make([]Candle, 0, len(rows))
+	for _, row := range rows {
+		if len(row) < 6 {
+			continue
+		}
+		openTime, _ := row[0].(float64) // kline open time, ms since epoch
+		o, err1 := klineFloat(row[1])
+		h, err2 := klineFloat(row[2])
+		l, err3 := klineFloat(row[3])
+		c, err4 := klineFloat(row[4])
+		v, err5 := klineFloat(row[5])
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil {
+			continue
+		}
+		candles = append(candles, Candle{
+			OpenTime: msToTime(int64(openTime)),
+			Open:     o,
+			High:     h,
+			Low:      l,
+			Close:    c,
+			Volume:   v,
+		})
+	}
+	if len(candles) == 0 {
+		return nil, fmt.Errorf("marketdata: no klines for %s %s", symbol, interval)
+	}
+	return candles, nil
+}
+
+// klineFloat parses a Binance kline numeric field, which arrives as a JSON
+// string.
+func klineFloat(v any) (float64, error) {
+	text, ok := v.(string)
+	if !ok {
+		return 0, fmt.Errorf("marketdata: kline field %v is not a string", v)
+	}
+	return strconv.ParseFloat(strings.TrimSpace(text), 64)
+}
+
 func (p *BinanceProvider) get(ctx context.Context, path string, params url.Values, out any) error {
 	endpoint := p.baseURL + path
 	if len(params) > 0 {

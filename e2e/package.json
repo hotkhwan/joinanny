@@ -1,0 +1,12 @@
+{
+  "name": "my-bot-e2e",
+  "private": true,
+  "description": "Playwright end-to-end tests for the Aliza trading dashboard",
+  "scripts": {
+    "test": "playwright test",
+    "install:browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}

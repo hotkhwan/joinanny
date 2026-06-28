@@ -1,0 +1,141 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"bottrade/internal/auth"
+)
+
+// stubKlines serves an uptrending klines series so the EMA strategy takes longs
+// whose take-profit is hit — a deterministic "goal reached" paper run.
+func stubKlines(t *testing.T) *httptest.Server {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("[")
+	price := 100.0
+	for i := 0; i < 90; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		open := i * 3600000
+		closeT := open + 3600000
+		// high padded above close so a +2% TP fills; low barely below so the -1%
+		// stop never does.
+		fmt.Fprintf(&b, `[%d,"%.4f","%.4f","%.4f","%.4f","1",%d,"0",0,"0","0","0"]`,
+			open, price, price*1.012, price*0.9995, price, closeT)
+		price *= 1.01
+	}
+	b.WriteString("]")
+	body := b.String()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/fapi/v1/klines", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func goalServer(t *testing.T) (*Server, string) {
+	t.Helper()
+	stub := stubKlines(t)
+	cfg := testConfigWith(t, map[string]string{"MARKETDATA_BASE_URL": stub.URL})
+	tk, err := auth.NewTokenizer(bytes.Repeat([]byte("k"), auth.MinSecretSize), 0)
+	if err != nil {
+		t.Fatalf("NewTokenizer: %v", err)
+	}
+	token, err := tk.Issue("tg:468848033", "hotkhwan", "user")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	return NewServer(cfg, nil, testLogger(), WithTokenizer(tk)), token
+}
+
+func postGoal(t *testing.T, server *Server, token string, body map[string]any) (int, map[string]any) {
+	t.Helper()
+	payload, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/goal/run", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := server.App().Test(req)
+	if err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
+}
+
+func TestGoalRunRealPaper(t *testing.T) {
+	server, token := goalServer(t)
+
+	// Unauthenticated → 401.
+	if code, _ := postGoal(t, server, "", map[string]any{"profit": 5}); code != http.StatusUnauthorized {
+		t.Fatalf("no-auth status = %d, want 401", code)
+	}
+
+	// Missing/zero profit → 400.
+	if code, out := postGoal(t, server, token, map[string]any{"profit": 0, "symbol": "BTC"}); code != http.StatusBadRequest {
+		t.Fatalf("zero profit status = %d (%v), want 400", code, out)
+	}
+
+	// Happy path: uptrend → all wins → target reached.
+	code, out := postGoal(t, server, token, map[string]any{
+		"profit": 5, "capital": 100, "risk": 30, "symbol": "BTC", "strategy": "ema", "interval": "1h", "bars": 90,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("goal run status = %d (%v)", code, out)
+	}
+	stats, _ := out["stats"].(map[string]any)
+	if stats == nil {
+		t.Fatalf("no stats in response: %v", out)
+	}
+	if trades, _ := stats["trades"].(float64); trades < 1 {
+		t.Fatalf("expected trades, got %v", stats["trades"])
+	}
+	if v, _ := stats["verdict"].(string); v != "target_reached" {
+		t.Fatalf("verdict = %q, want target_reached", v)
+	}
+	if wr, _ := stats["win_rate_pct"].(float64); wr != 100 {
+		t.Fatalf("win rate = %v, want 100", wr)
+	}
+	if out["output"] == nil || !strings.Contains(out["output"].(string), "Paper run on real") {
+		t.Fatalf("missing paper-run summary text: %v", out["output"])
+	}
+
+	// History now has the run.
+	hreq := httptest.NewRequest(http.MethodGet, "/api/goal/history", nil)
+	hreq.Header.Set("Authorization", "Bearer "+token)
+	hresp, _ := server.App().Test(hreq)
+	var hist struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	json.NewDecoder(hresp.Body).Decode(&hist)
+	hresp.Body.Close()
+	if len(hist.Runs) == 0 {
+		t.Fatal("expected goal history to contain the run")
+	}
+	if hist.Runs[0]["symbol"] != "BTCUSDT" {
+		t.Fatalf("history symbol = %v, want BTCUSDT", hist.Runs[0]["symbol"])
+	}
+}
+
+func TestGoalHistoryRequiresAuth(t *testing.T) {
+	server, _ := goalServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/goal/history", nil)
+	resp, _ := server.App().Test(req)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("history no-auth status = %d, want 401", resp.StatusCode)
+	}
+}
