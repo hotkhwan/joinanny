@@ -38,7 +38,16 @@ type Handler struct {
 	marketPeriod  string
 	klines        klineSource
 	campaigns     *campaignexec.Manager
+	webAppURL     string
 	logger        *slog.Logger
+}
+
+// WithWebAppURL enables the "Open ANNY" Telegram Mini App button on /start and
+// /app. The URL must be the dashboard's public https address. When unset, /app
+// explains how to open the dashboard instead.
+func (h *Handler) WithWebAppURL(url string) *Handler {
+	h.webAppURL = strings.TrimSpace(url)
+	return h
 }
 
 // WithCampaigns enables the /campaign command (autonomous testnet campaigns).
@@ -153,7 +162,10 @@ func (h *Handler) Handle(ctx context.Context, sender Sender, update *models.Upda
 
 	command := commandName(text)
 	switch command {
-	case "/start":
+	case "/start", "/app":
+		if h.webAppURL != "" {
+			return h.sendWithKeyboard(ctx, sender, message.Chat.ID, StartText, webAppKeyboard(h.webAppURL))
+		}
 		return h.sendText(ctx, sender, message.Chat.ID, StartText)
 	case "/help":
 		return h.sendText(ctx, sender, message.Chat.ID, HelpText)
@@ -486,6 +498,17 @@ func formatMarketSnapshot(s marketdata.Snapshot) string {
 		fmt.Fprintf(&b, "\nTaker buy/sell: %s", s.Taker.BuySellRatio.String())
 	}
 	return b.String()
+}
+
+// webAppKeyboard builds an inline button that launches the dashboard as a
+// Telegram Mini App. Tapping it opens the web app inside Telegram, where the
+// initData auto-login signs the user into their own account.
+func webAppKeyboard(url string) models.ReplyMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{{
+			{Text: "🤖 Open ANNY", WebApp: &models.WebAppInfo{URL: url}},
+		}},
+	}
 }
 
 func confirmationKeyboard(id string) models.ReplyMarkup {

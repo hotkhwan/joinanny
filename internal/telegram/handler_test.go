@@ -162,8 +162,26 @@ func TestHandlerStartCommand(t *testing.T) {
 	}
 
 	got := sender.singleMessage(t)
-	if !strings.Contains(got.Text, "Trade bot online") {
+	if !strings.Contains(got.Text, "ANNY is online") {
 		t.Fatalf("message = %q, want start text", got.Text)
+	}
+}
+
+func TestHandlerAppCommandLaunchesMiniApp(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger()).WithWebAppURL("https://aliza-trading.fly.dev")
+	sender := &fakeSender{}
+
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/app")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	got := sender.singleMessage(t)
+	kb, ok := got.ReplyMarkup.(*models.InlineKeyboardMarkup)
+	if !ok {
+		t.Fatalf("ReplyMarkup = %T, want inline keyboard", got.ReplyMarkup)
+	}
+	btn := kb.InlineKeyboard[0][0]
+	if btn.WebApp == nil || btn.WebApp.URL != "https://aliza-trading.fly.dev" {
+		t.Fatalf("web app button = %+v, want the dashboard URL", btn)
 	}
 }
 
@@ -427,7 +445,7 @@ func TestHandlerAllowsExtraAllowlistedUser(t *testing.T) {
 	}
 
 	got := sender.singleMessage(t)
-	if !strings.Contains(got.Text, "Trade bot online") {
+	if !strings.Contains(got.Text, "ANNY is online") {
 		t.Fatalf("message = %q, want start text", got.Text)
 	}
 }

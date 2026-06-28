@@ -1,8 +1,11 @@
 package telegram
 
-const StartText = "Trade bot online.\n\nDry-run and Binance testnet are enabled by default. Use /help to see the command grammar."
+const StartText = "🤖 ANNY is online.\n\nTap “Open ANNY” to launch the app right here in Telegram — every trade and result is logged in your Flight Recorder.\n\nDry-run and Binance testnet are on by default. Use /help for the command grammar, or /app to reopen the dashboard."
 
 const HelpText = `Phase 1 commands:
+
+Open the app (Telegram Mini App):
+/app          launch the ANNY dashboard inside Telegram
 
 Open position:
 long BTC 3x entry 67500 sl 65000 tp 72000 size 100usdt
