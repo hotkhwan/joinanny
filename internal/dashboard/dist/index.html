@@ -390,7 +390,7 @@
               <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
             </div>
             <div class="grid2">
-              <div><label for="g-risk">Max risk % <span style="color:var(--muted);font-weight:400">· = live leverage (30 → 30x)</span></label><input id="g-risk" inputmode="numeric" placeholder="30" value="30" autocomplete="off" /></div>
+              <div><label for="g-risk">Max risk % <span style="color:var(--muted);font-weight:400">· = live leverage (5 → 5x). Lower = safer.</span></label><input id="g-risk" inputmode="numeric" placeholder="5" value="5" autocomplete="off" /></div>
               <div><label for="g-symbol">Symbol <span style="color:var(--muted);font-weight:400">· type or pick a favourite</span></label><input id="g-symbol" list="g-favlist" placeholder="BTC — or pick a favourite below" value="BTC" autocomplete="off" /><datalist id="g-favlist"></datalist><select id="g-favselect" style="margin-top:0.4rem;width:100%"><option value="">★ pick a favourite…</option></select></div>
             </div>
             <div class="grid2">
@@ -556,6 +556,9 @@
           <div id="comm-coins"></div>
         </div>
       </section>
+      <footer style="max-width:32rem;margin:1.5rem auto 5.5rem;padding:0 1rem;font-size:0.68rem;line-height:1.5;color:var(--muted);text-align:center">
+        ANNY provides analytical tools and execution automation. It does not guarantee profits and should not be considered financial or investment advice. Trading digital assets involves substantial risk. Past performance does not guarantee future results.
+      </footer>
     </main>
 
     <!-- bottom nav -->
@@ -1102,7 +1105,7 @@
         $("g-run").disabled = true;
         const body = {
           profit: $("g-profit").value, capital: $("g-capital").value,
-          risk: parseInt($("g-risk").value, 10) || 30, symbol: $("g-symbol").value,
+          risk: parseInt($("g-risk").value, 10) || 5, symbol: $("g-symbol").value,
           strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked,
         };
         try {
@@ -1119,7 +1122,7 @@
         if (!confirm("Run a LIVE testnet Mission? ANNY will propose a real order on your active key — you still press Confirm before it places.")) return;
         goalMsg("Preparing live Mission…", true);
         $("g-live").disabled = true;
-        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, risk: parseInt($("g-risk").value, 10) || 30, strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked };
+        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, risk: parseInt($("g-risk").value, 10) || 5, strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked };
         try {
           const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));
