@@ -346,6 +346,8 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 			} else {
 				a.logger.Warn("per-user credentials disabled", "error", err)
 			}
+			// Per-user (bring-your-own) AI keys share the same keyring.
+			opts = append(opts, api.WithAISecrets(newMongoAISecrets(store.AIKeysCollection()), keyring))
 		} else {
 			a.logger.Warn("per-user credentials disabled", "error", err)
 		}
