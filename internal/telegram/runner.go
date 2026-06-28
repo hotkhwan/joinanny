@@ -43,6 +43,7 @@ func NewPollingRunner(cfg config.Config, orderService *orders.Service, statusSer
 		planService = plans.NewService(nil)
 	}
 	handler := NewHandlerWithServicesAndPlans(cfg.Telegram.AdminUserID, cfg.Telegram.AllowedUserIDs, cfg.App.MaxLeverage, orderService, statusService, planService, logger)
+	handler.WithWebAppURL(cfg.Telegram.WebAppURL)
 	if cfg.AI.MarketDataEnabled {
 		handler.WithMarketData(marketdata.NewBinanceProvider(cfg.AI.MarketDataBaseURL, nil), cfg.AI.MarketDataPeriod)
 	}

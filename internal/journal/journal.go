@@ -135,6 +135,11 @@ func (s *Service) Record(ctx context.Context, trade Trade) error {
 	return s.repo.Save(ctx, trade)
 }
 
+// List returns the trades matching filter, for the Flight Recorder feed.
+func (s *Service) List(ctx context.Context, filter Filter) ([]Trade, error) {
+	return s.repo.List(ctx, filter)
+}
+
 // Report aggregates the trades matching filter into win-rate / PnL statistics.
 func (s *Service) Report(ctx context.Context, filter Filter) (Report, error) {
 	trades, err := s.repo.List(ctx, filter)

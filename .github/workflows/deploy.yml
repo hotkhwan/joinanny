@@ -1,0 +1,29 @@
+name: Deploy to Fly.io
+
+# Auto-deploy: every push to main ships to the Fly app. Requires a repo secret
+# FLY_API_TOKEN (create one with `flyctl tokens create deploy`, then add it under
+# Settings → Secrets and variables → Actions → New repository secret).
+#
+# Branch → environment plan (see memory "deploy-environments"):
+#   main    → aliza-trading        (production at launch)
+#   develop → (future) a separate dev app, wired here when the dev env exists
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main → aliza-trading
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy
+        run: flyctl deploy --remote-only -a aliza-trading
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

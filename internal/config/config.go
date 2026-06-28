@@ -74,6 +74,7 @@ type TelegramConfig struct {
 	AllowedUserIDs    []int64
 	Mode              string
 	PublicWebhookURL  string
+	WebAppURL         string // https URL of the dashboard, opened as a Telegram Mini App
 	PollingBackoffMin time.Duration
 	PollingBackoffMax time.Duration
 }
@@ -234,6 +235,7 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	}
 	cfg.Telegram.Mode = strings.ToLower(reader.string("TELEGRAM_MODE", cfg.Telegram.Mode))
 	cfg.Telegram.PublicWebhookURL = reader.string("PUBLIC_WEBHOOK_URL", cfg.Telegram.PublicWebhookURL)
+	cfg.Telegram.WebAppURL = reader.string("WEBAPP_URL", cfg.Telegram.WebAppURL)
 	cfg.Telegram.PollingBackoffMin = reader.seconds("TELEGRAM_POLLING_BACKOFF_MIN_SECONDS", cfg.Telegram.PollingBackoffMin)
 	cfg.Telegram.PollingBackoffMax = reader.seconds("TELEGRAM_POLLING_BACKOFF_MAX_SECONDS", cfg.Telegram.PollingBackoffMax)
 

@@ -20,7 +20,7 @@ func TestRegisterServesEmbeddedIndex(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("GET / status = %d, want 200", status)
 	}
-	if !strings.Contains(body, "Aliza") {
+	if !strings.Contains(body, "ANNY") {
 		t.Fatalf("GET / body does not contain dashboard marker: %q", body)
 	}
 }
@@ -39,7 +39,7 @@ func TestRegisterSPAFallbackServesIndex(t *testing.T) {
 		if status != http.StatusOK {
 			t.Fatalf("SPA fallback %s status = %d, want 200", route, status)
 		}
-		if !strings.Contains(body, "Aliza") {
+		if !strings.Contains(body, "ANNY") {
 			t.Fatalf("SPA fallback %s did not serve index.html: %q", route, body)
 		}
 	}
@@ -59,7 +59,7 @@ func TestRegisterMissingAssetReturns404(t *testing.T) {
 		if status != http.StatusNotFound {
 			t.Fatalf("GET %s status = %d, want 404 (body: %q)", target, status, body)
 		}
-		if strings.Contains(body, "Aliza") {
+		if strings.Contains(body, "ANNY") {
 			t.Fatalf("GET %s served the SPA shell instead of 404", target)
 		}
 	}
