@@ -78,6 +78,7 @@
       .appbar .spacer { flex: 1; }
       .greeting { font-family: var(--font-head); font-size: 0.92rem; color: var(--text); margin: 0.1rem 0 0.2rem; }
       .greeting span { color: var(--primary); }
+      .ver { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin: 0 0 0.6rem; letter-spacing: 0.3px; }
       .who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--muted); }
       .who img { width: 1.9rem; height: 1.9rem; border-radius: 50%; object-fit: cover; border: 1px solid var(--card-border); }
 
@@ -302,6 +303,7 @@
       <!-- HOME -->
       <section id="view-home" class="hidden">
         <p class="greeting" id="home-greeting">Good evening, Captain 👋</p>
+        <div class="ver" id="home-ver"></div>
         <div class="hero">
           <div class="hlabel">Today's Profit</div>
           <div class="hnum mono pos" id="home-pnl">—</div>
@@ -614,7 +616,12 @@
         await fetch("/api/admin/approve", { method: "POST", headers: authHeaders(), body: JSON.stringify({ subject }) });
         loadAdminPending();
       }
+      function renderVersion() {
+        const box = $("home-ver"); if (!box) return;
+        box.textContent = me && me.version ? "ANNY v" + me.version : "";
+      }
       function renderTier() {
+        renderVersion();
         if (!me || !$("home-tier")) return;
         const aiTxt = me.ai_limit < 0 ? "unlimited AI" : `${me.ai_used || 0}/${me.ai_limit} AI runs`;
         const mTxt = me.mission_limit < 0 ? "unlimited missions" : `${me.mission_used || 0}/${me.mission_limit} live missions`;
