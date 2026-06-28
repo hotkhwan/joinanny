@@ -62,6 +62,7 @@ type Server struct {
 	parser      parser.Parser
 	advisor     signals.Advisor
 	goalRuns    GoalRunStore
+	access      AccessStore
 	logger      *slog.Logger
 	app         *fiber.App
 }
@@ -114,6 +115,12 @@ func WithGoalStore(store GoalRunStore) Option {
 	return func(s *Server) { s.goalRuns = store }
 }
 
+// WithAccessStore persists crew-access approvals. When unset, NewServer installs
+// an in-memory store (per process).
+func WithAccessStore(store AccessStore) Option {
+	return func(s *Server) { s.access = store }
+}
+
 func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Logger, opts ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -135,6 +142,9 @@ func NewServer(cfg config.Config, processor *signals.Processor, logger *slog.Log
 	}
 	if server.goalRuns == nil {
 		server.goalRuns = newMemGoalRuns(200)
+	}
+	if server.access == nil {
+		server.access = newMemAccess()
 	}
 	server.routes()
 	return server
@@ -194,6 +204,10 @@ func (s *Server) routes() {
 	s.app.Get("/api/goal/history", s.requireAuth, s.handleGoalHistory)
 	s.app.Get("/api/recorder", s.requireAuth, s.handleRecorder)
 	s.app.Get("/api/leaderboard", s.requireAuth, s.handleLeaderboard)
+	s.app.Get("/api/me", s.requireAuth, s.handleMe)
+	s.app.Post("/api/access/request", s.requireAuth, s.handleAccessRequest)
+	s.app.Get("/api/admin/pending", s.requireAuth, s.handleAdminPending)
+	s.app.Post("/api/admin/approve", s.requireAuth, s.handleAdminApprove)
 	s.app.Get("/api/history", s.requireAuth, s.handleHistory)
 	s.app.Post("/api/credentials", s.requireAuth, s.handleStoreCredential)
 	s.app.Get("/api/credentials", s.requireAuth, s.handleGetCredential)

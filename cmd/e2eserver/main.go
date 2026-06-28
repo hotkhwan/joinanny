@@ -39,6 +39,7 @@ func main() {
 		"HTTP_ENABLED":              "true",
 		"MARKETDATA_BASE_URL":       stubURL,
 		"MAX_LEVERAGE":              "20",
+		"ACCESS_OPEN":               "true", // harness runs unlocked; gating is unit-tested
 	}))
 	if err != nil {
 		logger.Error("config", "error", err)

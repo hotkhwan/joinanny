@@ -321,6 +321,7 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 			opts = append(opts, api.WithReport(reportService))
 		}
 		opts = append(opts, api.WithGoalStore(newMongoGoalRuns(store.GoalRunsCollection())))
+		opts = append(opts, api.WithAccessStore(newMongoAccess(store.AccessCollection())))
 	}
 
 	// Optional: let the goal/paper endpoints ask the AI advisor for a directional

@@ -435,6 +435,11 @@
           <div class="actions" style="margin-top:0.8rem"><button class="primary" id="saveKey">Save profile</button></div>
           <div class="msg" id="keyMsg"></div>
         </div>
+        <div class="card hidden" id="admin-card">
+          <strong>🛡 Crew approvals</strong>
+          <p style="margin:0.3rem 0 0.6rem">New members waiting for access. Approve to unlock the app for them.</p>
+          <div id="admin-approvals">Loading…</div>
+        </div>
         <div class="card" id="status">Loading status…</div>
       </section>
 
@@ -517,7 +522,47 @@
         if (p === "/order" || p === "/orders") return "orders";
         return "home";
       }
+      // ---- access gate (pre-launch: non-admin must be approved) ----
+      let me = null;
+      function unlocked() { return !me || me.approved || me.admin || me.open; }
+      async function loadMe() {
+        try { me = await (await fetch("/api/me", { headers: authHeaders() })).json(); }
+        catch (_) { me = { approved: true }; } // soft gate — never hard-lock on error
+        applyGate();
+      }
+      function applyGate() {
+        const ok = unlocked();
+        document.querySelectorAll("#nav button").forEach((b) => { if (b.dataset.view !== "home") b.classList.toggle("hidden", !ok); });
+        $("admin-card").classList.toggle("hidden", !(me && me.admin));
+        if (me && me.admin) loadAdminPending();
+        const btn = $("home-start");
+        if (ok) { btn.textContent = "Start Trading →"; btn.disabled = false; btn.onclick = () => navigate("orders"); }
+        else if (me && me.status === "requested") { btn.textContent = "⏳ Access requested"; btn.disabled = true; btn.onclick = null; }
+        else { btn.textContent = "🔒 Request access to crew"; btn.disabled = false; btn.onclick = requestAccess; }
+        if (!ok) showView("home");
+      }
+      async function requestAccess() {
+        const d = await (await fetch("/api/access/request", { method: "POST", headers: authHeaders() })).json().catch(() => ({}));
+        if (d.status) { me.status = d.status; if (d.status === "approved") me.approved = true; applyGate(); }
+      }
+      async function loadAdminPending() {
+        try {
+          const d = await (await fetch("/api/admin/pending", { headers: authHeaders() })).json();
+          const list = d.pending || [];
+          $("admin-approvals").innerHTML = list.length
+            ? list.map((r) => `<div class="profile"><span class="name">${escapeHtml(r.name || "member")}</span><span class="badge">${escapeHtml(r.subject)}</span><span class="spacer"></span><button class="ghost" data-approve="${escapeHtml(r.subject)}" style="width:auto;padding:0.3rem 0.7rem">Approve</button></div>`).join("")
+            : "<p style='font-size:0.85rem;color:var(--muted)'>No pending requests.</p>";
+          $("admin-approvals").querySelectorAll("[data-approve]").forEach((b) => (b.onclick = () => approveUser(b.dataset.approve)));
+        } catch (e) {}
+      }
+      async function approveUser(subject) {
+        await fetch("/api/admin/approve", { method: "POST", headers: authHeaders(), body: JSON.stringify({ subject }) });
+        loadAdminPending();
+      }
+
       function showView(name) {
+        // Locked users are confined to Home.
+        if (me && !unlocked() && name !== "home" && name !== "login") name = "home";
         ["home", "orders", "history", "community", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
         if (name === "home") loadHome();
@@ -570,6 +615,7 @@
         loadLeaderboard();
         loadStatus();
         loadHome();
+        loadMe();
       }
       $("logout").onclick = () => {
         localStorage.removeItem("token");

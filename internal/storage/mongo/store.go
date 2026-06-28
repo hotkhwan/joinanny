@@ -26,6 +26,7 @@ type Store struct {
 	journalTrades *mongodriver.Collection
 	credentials   *mongodriver.Collection
 	goalRuns      *mongodriver.Collection
+	access        *mongodriver.Collection
 }
 
 // GoalRunsCollection exposes the goal_runs collection so the app layer can wire
@@ -33,6 +34,11 @@ type Store struct {
 // layer's record type.
 func (s *Store) GoalRunsCollection() *mongodriver.Collection {
 	return s.goalRuns
+}
+
+// AccessCollection exposes the crew-access approvals collection.
+func (s *Store) AccessCollection() *mongodriver.Collection {
+	return s.access
 }
 
 func Connect(ctx context.Context, cfg Config) (*Store, error) {
@@ -66,6 +72,7 @@ func Connect(ctx context.Context, cfg Config) (*Store, error) {
 		journalTrades: db.Collection("journal_trades"),
 		credentials:   db.Collection("binance_credentials"),
 		goalRuns:      db.Collection("goal_runs"),
+		access:        db.Collection("crew_access"),
 	}
 	if err := store.ensureIndexes(ctx); err != nil {
 		_ = client.Disconnect(ctx)
