@@ -139,6 +139,9 @@
       .ibadge:hover { color: var(--primary); border-color: var(--primary); }
       /* award/role badge pill (Admin / Founder) */
       .awb { display: inline-block; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.3px; border: 1px solid var(--card-border); border-radius: 0.4rem; padding: 0.1rem 0.4rem; }
+      .member { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.55rem 0; border-bottom: 1px solid rgba(148,163,184,0.1); font-size: 0.85rem; }
+      .member-acts { display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; flex: 0 0 auto; }
+      button.mini { width: auto; padding: 0.25rem 0.55rem; font-size: 0.74rem; }
       /* toast — shows an info badge's detail, webview-safe */
       .toast { position: fixed; left: 50%; bottom: 5.5rem; transform: translateX(-50%); z-index: 80; max-width: 22rem; width: calc(100% - 2rem); background: #0b1220; border: 1px solid var(--card-border); border-radius: 0.7rem; padding: 0.7rem 0.85rem; font-size: 0.82rem; line-height: 1.45; color: var(--text); box-shadow: 0 12px 36px -10px rgba(0,0,0,0.8); text-align: center; }
       /* type-or-pick combobox (replaces flaky datalist) */
@@ -541,8 +544,8 @@
           <div class="msg" id="ai-msg"></div>
         </div>
         <div class="card hidden" id="admin-card">
-          <strong>🛡 Crew approvals</strong>
-          <p style="margin:0.3rem 0 0.6rem">New members waiting for access. Approve to unlock the app for them.</p>
+          <strong>🛡 Members</strong>
+          <p style="margin:0.3rem 0 0.6rem">Everyone who signed in — approve, promote, or revoke. Copy a <b>tg:id</b> below for the manual forms.</p>
           <div id="admin-approvals">Loading…</div>
           <label for="tier-subject" style="margin-top:0.7rem">Set a member's tier</label>
           <div class="cmdrow">
@@ -692,18 +695,34 @@
         const d = await (await fetch("/api/access/request", { method: "POST", headers: authHeaders() })).json().catch(() => ({}));
         if (d.status) { me.status = d.status; if (d.status === "approved") me.approved = true; applyGate(); }
       }
+      // Full members console: every member (pending/approved/revoked) with id +
+      // per-row actions, so the admin never needs to hunt for an id.
       async function loadAdminPending() {
+        const box = $("admin-approvals"); if (!box) return;
         try {
-          const d = await (await fetch("/api/admin/pending", { headers: authHeaders() })).json();
-          const list = d.pending || [];
-          $("admin-approvals").innerHTML = list.length
-            ? list.map((r) => `<div class="profile"><span class="name">${escapeHtml(r.name || "member")}</span><span class="badge">${escapeHtml(r.subject)}</span><span class="spacer"></span><button class="ghost" data-approve="${escapeHtml(r.subject)}" style="width:auto;padding:0.3rem 0.7rem">Approve</button></div>`).join("")
-            : "<p style='font-size:0.85rem;color:var(--muted)'>No pending requests.</p>";
-          $("admin-approvals").querySelectorAll("[data-approve]").forEach((b) => (b.onclick = () => approveUser(b.dataset.approve)));
+          const d = await (await fetch("/api/admin/members", { headers: authHeaders() })).json();
+          const list = d.members || [];
+          if (!list.length) { box.innerHTML = "<p style='font-size:0.85rem;color:var(--muted)'>No members yet.</p>"; return; }
+          const pill = (s) => s === "approved" ? "active" : s === "revoked" ? "live" : "";
+          box.innerHTML = list.map((r) => {
+            const id = String(r.subject).replace(/^tg:/, "");
+            const role = r.role === "admin" ? ' <span class="awb" style="border-color:#FFD166;color:#FFD166">👑 admin</span>' : "";
+            const tier = r.tier ? ` <span class="badge">${escapeHtml(r.tier)}</span>` : "";
+            const a = [];
+            if (r.status !== "approved") a.push(`<button class="ghost mini" data-act="approve" data-s="${escapeHtml(r.subject)}">Approve</button>`);
+            if (r.status === "approved") a.push(`<button class="ghost mini" data-act="revoke" data-s="${escapeHtml(r.subject)}">Revoke</button>`);
+            if (r.role !== "admin") a.push(`<button class="ghost mini" data-act="make-admin" data-s="${escapeHtml(r.subject)}">Make admin</button>`);
+            return `<div class="member"><div><b>${escapeHtml(r.name || "member")}</b>${role}<br><span style="color:var(--muted);font-size:0.72rem">tg:${escapeHtml(id)} · <span class="badge ${pill(r.status)}">${escapeHtml(r.status || "?")}</span>${tier}</span></div><div class="member-acts">${a.join(" ")}</div></div>`;
+          }).join("");
+          box.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
+            const act = b.dataset.act, s = b.dataset.s;
+            if ((act === "revoke" || act === "make-admin") && !confirm((act === "revoke" ? "Revoke " : "Make admin: ") + s + "?")) return;
+            adminAction("/api/admin/" + act, { subject: s });
+          }));
         } catch (e) {}
       }
-      async function approveUser(subject) {
-        await fetch("/api/admin/approve", { method: "POST", headers: authHeaders(), body: JSON.stringify({ subject }) });
+      async function adminAction(path, body) {
+        await fetch(path, { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
         loadAdminPending();
       }
       function renderVersion() {

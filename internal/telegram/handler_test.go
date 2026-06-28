@@ -194,6 +194,7 @@ type fakeCrew struct {
 }
 
 func (f *fakeCrew) Pending(context.Context) ([]CrewMember, error) { return f.pending, nil }
+func (f *fakeCrew) Members(context.Context) ([]CrewMember, error) { return f.pending, nil }
 func (f *fakeCrew) Approve(_ context.Context, subject string) error {
 	f.approved = append(f.approved, subject)
 	return nil
