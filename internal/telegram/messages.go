@@ -40,6 +40,7 @@ Autonomous campaign (testnet, gated):
 /campaign stop
 
 Admin:
+/members          list everyone (id, plan, role)
 /pending          list crew-access requests
 /approve <id> [plan]  approve (optional free|captain|commander)
 /reject <id>      reject / revoke a member

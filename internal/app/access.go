@@ -24,7 +24,19 @@ func (c crewAdmin) Pending(ctx context.Context) ([]telegram.CrewMember, error) {
 	}
 	out := make([]telegram.CrewMember, 0, len(recs))
 	for _, r := range recs {
-		out = append(out, telegram.CrewMember{Subject: r.Subject, Name: r.Name, RequestedAt: r.RequestedAt})
+		out = append(out, telegram.CrewMember{Subject: r.Subject, Name: r.Name, Status: r.Status, Tier: r.Tier, Role: r.Role, RequestedAt: r.RequestedAt})
+	}
+	return out, nil
+}
+
+func (c crewAdmin) Members(ctx context.Context) ([]telegram.CrewMember, error) {
+	recs, err := c.store.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]telegram.CrewMember, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, telegram.CrewMember{Subject: r.Subject, Name: r.Name, Status: r.Status, Tier: r.Tier, Role: r.Role, RequestedAt: r.RequestedAt})
 	}
 	return out, nil
 }
@@ -117,6 +129,20 @@ func (m *mongoAccess) SetTier(ctx context.Context, subject, tier string) error {
 	}}}
 	_, err := m.coll.UpdateOne(ctx, bson.D{{Key: "_id", Value: subject}}, update, options.UpdateOne().SetUpsert(true))
 	return err
+}
+
+func (m *mongoAccess) All(ctx context.Context) ([]api.AccessRecord, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "requested_at", Value: -1}}).SetLimit(1000)
+	cursor, err := m.coll.Find(ctx, bson.D{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var recs []api.AccessRecord
+	if err := cursor.All(ctx, &recs); err != nil {
+		return nil, err
+	}
+	return recs, nil
 }
 
 func (m *mongoAccess) Pending(ctx context.Context) ([]api.AccessRecord, error) {

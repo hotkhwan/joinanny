@@ -44,10 +44,13 @@ type Handler struct {
 	logger        *slog.Logger
 }
 
-// CrewMember is a pending access request, for the admin /pending list.
+// CrewMember is a crew access record, for the admin /pending and /members lists.
 type CrewMember struct {
 	Subject     string
 	Name        string
+	Status      string
+	Tier        string
+	Role        string
 	RequestedAt time.Time
 }
 
@@ -55,6 +58,7 @@ type CrewMember struct {
 // It is backed by the same store the web "Crew approvals" panel uses.
 type CrewAdmin interface {
 	Pending(ctx context.Context) ([]CrewMember, error)
+	Members(ctx context.Context) ([]CrewMember, error)
 	Approve(ctx context.Context, subject string) error
 	Revoke(ctx context.Context, subject string) error
 	SetTier(ctx context.Context, subject, tier string) error
@@ -214,6 +218,8 @@ func (h *Handler) Handle(ctx context.Context, sender Sender, update *models.Upda
 		return h.handleCampaign(sender, message.Chat.ID, userID, text)
 	case "/pending":
 		return h.handlePending(ctx, sender, message.Chat.ID, userID)
+	case "/members":
+		return h.handleMembers(ctx, sender, message.Chat.ID, userID)
 	case "/approve":
 		return h.handleApprove(ctx, sender, message.Chat.ID, userID, commandRest(text))
 	case "/unapprove", "/revoke", "/reject":
@@ -590,6 +596,39 @@ func (h *Handler) handlePending(ctx context.Context, sender Sender, chatID, user
 		}
 		fmt.Fprintf(&b, "\n• %s (tg:%s)%s\n   /approve %s · /approve %s captain · /reject %s", m.Name, id, when, id, id, id)
 	}
+	return h.sendText(ctx, sender, chatID, b.String())
+}
+
+// handleMembers lists every member (any status) with their id, plan and role, so
+// the admin can find an id to /approve, /tier, /makeadmin or /reject.
+func (h *Handler) handleMembers(ctx context.Context, sender Sender, chatID, userID int64) error {
+	if h.adminUserID == 0 || userID != h.adminUserID {
+		return h.sendText(ctx, sender, chatID, "Admin only.")
+	}
+	if h.crew == nil {
+		return h.sendText(ctx, sender, chatID, "Crew approvals are not enabled.")
+	}
+	members, err := h.crew.Members(ctx)
+	if err != nil {
+		return h.sendText(ctx, sender, chatID, "Could not load members.")
+	}
+	if len(members) == 0 {
+		return h.sendText(ctx, sender, chatID, "No members yet.")
+	}
+	var b strings.Builder
+	b.WriteString("👥 Members:\n")
+	for _, m := range members {
+		id := strings.TrimPrefix(m.Subject, "tg:")
+		extra := ""
+		if m.Tier != "" {
+			extra += " · " + m.Tier
+		}
+		if m.Role == "admin" {
+			extra += " · 👑admin"
+		}
+		fmt.Fprintf(&b, "\n• %s (tg:%s) — %s%s", m.Name, id, m.Status, extra)
+	}
+	b.WriteString("\n\nActions: /approve <id> [plan] · /tier <id> <plan> · /makeadmin <id> · /reject <id>")
 	return h.sendText(ctx, sender, chatID, b.String())
 }
 

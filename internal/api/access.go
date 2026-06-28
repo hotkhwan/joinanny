@@ -47,6 +47,7 @@ type AccessStore interface {
 	SetTier(ctx context.Context, subject, tier string) error
 	SetRole(ctx context.Context, subject, role string) error
 	Pending(ctx context.Context) ([]AccessRecord, error)
+	All(ctx context.Context) ([]AccessRecord, error)
 }
 
 func (s *Server) isAdmin(c fiber.Ctx) bool {
@@ -229,6 +230,22 @@ func (s *Server) notifyAdmin(text string) {
 	}()
 }
 
+// handleAdminMembers lists ALL members (pending + approved + revoked) so the
+// admin can see ids/names and act, not just pending requests (admin only).
+func (s *Server) handleAdminMembers(c fiber.Ctx) error {
+	if !s.isAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin only"})
+	}
+	all, err := s.access.All(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not load members"})
+	}
+	if all == nil {
+		all = []AccessRecord{}
+	}
+	return c.JSON(fiber.Map{"members": all})
+}
+
 // handleAdminPending lists pending access requests (admin only).
 func (s *Server) handleAdminPending(c fiber.Ctx) error {
 	if !s.isAdmin(c) {
@@ -368,5 +385,16 @@ func (m *memAccess) Pending(_ context.Context) ([]AccessRecord, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt.Before(out[j].RequestedAt) })
+	return out, nil
+}
+
+func (m *memAccess) All(_ context.Context) ([]AccessRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]AccessRecord, 0, len(m.recs))
+	for _, rec := range m.recs {
+		out = append(out, rec)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt.After(out[j].RequestedAt) })
 	return out, nil
 }

@@ -239,6 +239,7 @@ func (s *Server) routes() {
 	s.app.Get("/api/me", s.requireAuth, s.handleMe)
 	s.app.Post("/api/access/request", s.requireAuth, s.handleAccessRequest)
 	s.app.Get("/api/admin/pending", s.requireAuth, s.handleAdminPending)
+	s.app.Get("/api/admin/members", s.requireAuth, s.handleAdminMembers)
 	s.app.Post("/api/admin/approve", s.requireAuth, s.handleAdminApprove)
 	s.app.Post("/api/admin/revoke", s.requireAuth, s.handleAdminRevoke)
 	s.app.Post("/api/admin/make-admin", s.requireAuth, s.handleAdminMakeAdmin)
