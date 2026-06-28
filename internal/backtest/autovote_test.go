@@ -4,7 +4,7 @@ import "testing"
 
 type fixedSignal struct{ s Signal }
 
-func (f fixedSignal) Name() string             { return "fixed" }
+func (f fixedSignal) Name() string              { return "fixed" }
 func (f fixedSignal) Evaluate([]float64) Signal { return f.s }
 
 func TestAutoVoteStrategy(t *testing.T) {

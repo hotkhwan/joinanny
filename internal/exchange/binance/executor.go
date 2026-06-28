@@ -504,11 +504,11 @@ func (e *Executor) cancelOrder(ctx context.Context, symbol string, clientOrderID
 	}, &response)
 }
 
-// MoveStopLoss replaces the stop-loss for an open position: cancel the algo
-// order identified by oldClientAlgoID, then place a fresh STOP_MARKET at
-// newStop. The trailing-stop monitor calls this to ratchet protection in.
-// Binance forbids reusing a cancelled client order id, so the caller supplies a
-// new newClientAlgoID for each move.
+// MoveStopLoss replaces the stop-loss for an open position. It places the fresh
+// STOP_MARKET at newStop FIRST, then cancels the previous order — so the position
+// is never left unprotected if a call fails (worst case it is briefly protected
+// by two reduceOnly stops, which is safe). Binance forbids reusing a cancelled
+// client order id, so the caller supplies a new newClientAlgoID for each move.
 func (e *Executor) MoveStopLoss(ctx context.Context, symbol string, side domain.PositionSide, newStop decimal.Decimal, oldClientAlgoID string, newClientAlgoID string) error {
 	if err := e.validateConfig(); err != nil {
 		return err
@@ -528,9 +528,8 @@ func (e *Executor) MoveStopLoss(ctx context.Context, symbol string, side domain.
 		exitSide = "BUY"
 	}
 
-	if err := e.cancelAlgoOrder(ctx, oldClientAlgoID); err != nil {
-		return fmt.Errorf("cancel previous stop loss: %w", err)
-	}
+	// Place the new (tighter) stop first — if this fails, the old stop still
+	// protects the position and we return the error untouched.
 	if _, err := e.newAlgoOrder(ctx, url.Values{
 		"symbol":        {symbol},
 		"side":          {exitSide},
@@ -542,6 +541,13 @@ func (e *Executor) MoveStopLoss(ctx context.Context, symbol string, side domain.
 		"clientAlgoId":  {newClientAlgoID},
 	}); err != nil {
 		return fmt.Errorf("place new stop loss: %w", err)
+	}
+	// New stop is live; the move has logically succeeded. Cancel the old one
+	// best-effort — a failure only leaves a harmless redundant reduceOnly stop,
+	// so log and move on rather than reporting the move as failed.
+	if err := e.cancelAlgoOrder(ctx, oldClientAlgoID); err != nil {
+		e.logger.Warn("trailing: cancel previous stop loss failed (position still protected by the new stop)",
+			"symbol", symbol, "old_id", oldClientAlgoID, "error", err)
 	}
 	return nil
 }

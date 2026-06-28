@@ -136,7 +136,7 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	}
 	s.usage.Incr(claimsOf(c).Subject, "mission") // count the attempt toward the daily limit
 	return c.JSON(fiber.Map{
-		"output":     "🚀 Review this live Mission (testnet) — press Confirm to place it on your active key:\n\n" + orders.Summary(intent),
+		"output":     "🚀 Review this live Mission (testnet) — press Confirm to place it on your active key:\n\n" + orders.Summary(intent) + "\n\n🤖 Once filled, ANNY auto-manages the stop — moving it to break-even and trailing to lock profit.",
 		"confirm_id": confirmation.ID,
 	})
 }
