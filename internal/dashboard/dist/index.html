@@ -3,95 +3,280 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aliza · Trading</title>
+    <title>ANNY · AI Trading Companion</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-      :root { color-scheme: light dark; --accent: #3b82f6; }
+      :root {
+        color-scheme: dark;
+        --bg: #050816;
+        --card: rgba(17, 24, 39, 0.7);
+        --card-border: rgba(0, 245, 255, 0.12);
+        --primary: #00F5FF;
+        --accent: #00F5FF;
+        --accent-grad: linear-gradient(135deg, #00F0FF, #0066FF);
+        --profit: #00FF99;
+        --loss: #FF4D6D;
+        --amber: #F5A524;
+        --text: #FFFFFF;
+        --muted: #94A3B8;
+        --font-head: "Space Grotesk", system-ui, sans-serif;
+        --font-body: "Inter", system-ui, -apple-system, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+      }
       * { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-      main { max-width: 40rem; margin: 0 auto; padding: 0 1rem 3rem; }
-      h1 { font-size: 1.25rem; margin: 0; }
-      p { color: #888; margin-top: 0; }
-      .appbar { display: flex; align-items: center; gap: 0.6rem; padding: 1rem 0 0.5rem; }
+      html, body { background: var(--bg); }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        min-height: 100vh;
+        background:
+          radial-gradient(1100px 600px at 50% -10%, rgba(0, 102, 255, 0.18), transparent 60%),
+          radial-gradient(900px 500px at 90% 10%, rgba(0, 245, 255, 0.10), transparent 55%),
+          radial-gradient(800px 600px at 10% 90%, rgba(255, 77, 109, 0.06), transparent 55%),
+          var(--bg);
+        background-attachment: fixed;
+        -webkit-font-smoothing: antialiased;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background-image:
+          linear-gradient(rgba(0, 245, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 245, 255, 0.035) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(circle at 50% 18%, #000 0%, transparent 78%);
+        -webkit-mask-image: radial-gradient(circle at 50% 18%, #000 0%, transparent 78%);
+      }
+      main { position: relative; z-index: 1; max-width: 40rem; margin: 0 auto; padding: 0 1rem calc(6rem + env(safe-area-inset-bottom)); }
+      h1 { font-family: var(--font-head); font-size: 1.25rem; margin: 0; }
+      strong { font-family: var(--font-head); font-weight: 600; letter-spacing: 0.2px; }
+      p { color: var(--muted); margin-top: 0; }
+      .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+      /* ---- app bar ---- */
+      .appbar { display: flex; align-items: center; gap: 0.7rem; padding: 1.2rem 0 0.4rem; }
+      .brand { display: flex; align-items: center; gap: 0.6rem; }
+      .mascot { width: 2.6rem; height: 2.6rem; flex: 0 0 auto; animation: float 4.5s ease-in-out infinite; filter: drop-shadow(0 0 10px rgba(0, 245, 255, 0.45)); }
+      @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+      @keyframes blink { 0%, 92%, 100% { opacity: 1; } 95% { opacity: 0.25; } }
+      .mascot .eye { animation: blink 5s infinite; }
+      .brand .word { font-family: var(--font-head); font-weight: 700; font-size: 1.25rem; line-height: 1.05;
+        background: linear-gradient(90deg, #fff, #00F5FF); -webkit-background-clip: text; background-clip: text; color: transparent;
+        text-shadow: 0 0 16px rgba(0, 245, 255, 0.35); }
+      .brand .sub { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.4px; margin-top: 1px; }
       .appbar .spacer { flex: 1; }
-      .who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
-      .who img { width: 1.8rem; height: 1.8rem; border-radius: 50%; object-fit: cover; }
-      .nav { display: flex; gap: 0.4rem; position: sticky; top: 0; padding: 0.5rem 0; background: Canvas; z-index: 5; }
-      .nav button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.6rem; background: #8881; color: inherit; font-weight: 600; cursor: pointer; }
-      .nav button.on { background: var(--accent); color: #fff; }
-      .card { margin-top: 1rem; border: 1px solid #8883; border-radius: 0.75rem; padding: 1rem 1.1rem; }
-      .row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #8881; }
+      .greeting { font-family: var(--font-head); font-size: 0.92rem; color: var(--text); margin: 0.1rem 0 0.2rem; }
+      .greeting span { color: var(--primary); }
+      .who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--muted); }
+      .who img { width: 1.9rem; height: 1.9rem; border-radius: 50%; object-fit: cover; border: 1px solid var(--card-border); }
+
+      /* ---- bottom nav ---- */
+      .nav {
+        position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(0.7rem + env(safe-area-inset-bottom));
+        width: calc(100% - 2rem); max-width: 38rem; z-index: 20;
+        display: flex; gap: 0.2rem; padding: 0.4rem; border-radius: 1.1rem;
+        background: rgba(10, 16, 32, 0.78); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--card-border); box-shadow: var(--shadow);
+      }
+      .nav button {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+        padding: 0.5rem 0.2rem; border: 0; border-radius: 0.8rem; background: transparent;
+        color: var(--muted); font-family: var(--font-body); font-weight: 600; font-size: 0.68rem; cursor: pointer;
+        transition: color 0.2s, background 0.2s; position: relative;
+      }
+      .nav button svg { width: 1.25rem; height: 1.25rem; }
+      .nav button.on { color: var(--primary); background: rgba(0, 245, 255, 0.10); animation: navpulse 2.6s ease-in-out infinite; }
+      .nav button.on svg { filter: drop-shadow(0 0 6px rgba(0, 245, 255, 0.7)); }
+      @keyframes navpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0, 245, 255, 0.0); } 50% { box-shadow: 0 0 14px 0 rgba(0, 245, 255, 0.25); } }
+
+      /* ---- cards ---- */
+      .card {
+        margin-top: 1rem; border: 1px solid var(--card-border); border-radius: 1rem; padding: 1.1rem 1.15rem;
+        background: var(--card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--shadow);
+      }
+      .row { display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12); }
       .row:last-child { border-bottom: 0; }
-      label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.2rem; color: #888; }
-      input, select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      .row strong { font-family: var(--font-mono); font-weight: 600; }
+      label { display: block; font-size: 0.82rem; margin: 0.6rem 0 0.25rem; color: var(--muted); }
+      input, select {
+        width: 100%; padding: 0.55rem 0.65rem; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 0.6rem;
+        background: rgba(5, 8, 22, 0.55); color: var(--text); font-family: var(--font-body); font-size: 0.95rem;
+        transition: border-color 0.18s, box-shadow 0.18s;
+      }
+      input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 245, 255, 0.16); }
+      input[inputmode="decimal"], input[inputmode="numeric"], #t-sym, #g-symbol, #cmd, #coinSearch { font-family: var(--font-mono); }
       .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
-      button { padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
-      button.primary { background: var(--accent); color: #fff; flex: 1; }
-      button.ghost { background: #8882; color: inherit; flex: 1; }
-      .msg { margin-top: 0.7rem; font-size: 0.85rem; min-height: 1.1rem; }
+      button { padding: 0.6rem; border: 0; border-radius: 0.65rem; cursor: pointer; font-weight: 700; font-family: var(--font-body); color: var(--text); }
+      button.primary {
+        background: var(--accent-grad); color: #00121a; flex: 1; box-shadow: 0 8px 22px -10px rgba(0, 200, 255, 0.7);
+        transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
+      }
+      button.primary:hover { transform: translateY(-1px) scale(1.01); box-shadow: 0 12px 30px -10px rgba(0, 220, 255, 0.9); filter: brightness(1.06); }
+      button.primary:active { transform: translateY(0) scale(0.99); }
+      button.primary:disabled { opacity: 0.55; cursor: default; transform: none; box-shadow: none; }
+      button.ghost { background: rgba(148, 163, 184, 0.14); color: var(--text); flex: 1; border: 1px solid rgba(148, 163, 184, 0.16); transition: background 0.18s; }
+      button.ghost:hover { background: rgba(0, 245, 255, 0.12); }
+      .msg { margin-top: 0.7rem; font-size: 0.85rem; min-height: 1.1rem; font-family: var(--font-mono); }
       .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-      .chip { padding: 0.3rem 0.7rem; font-size: 0.8rem; font-weight: 500; background: #8882; color: inherit; border-radius: 999px; }
+      .chip { padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600; background: rgba(0, 245, 255, 0.08); color: var(--primary); border: 1px solid var(--card-border); border-radius: 999px; font-family: var(--font-mono); transition: background 0.18s; }
+      .chip:hover { background: rgba(0, 245, 255, 0.18); }
       .cmdrow { display: flex; gap: 0.5rem; }
-      .output { margin-top: 0.8rem; padding: 0.8rem; background: #8881; border-radius: 0.5rem; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; min-height: 1rem; max-height: 22rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .profile { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
-      .profile .name { font-weight: 600; }
-      .badge { font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: #8882; }
-      .badge.live { background: #f59e0b33; color: #f59e0b; }
-      .badge.active { background: #22c55e33; color: #16a34a; }
+      .output {
+        margin-top: 0.8rem; padding: 0.85rem; background: rgba(5, 8, 22, 0.7); border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 0.65rem; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; min-height: 1rem;
+        max-height: 22rem; overflow: auto; font-family: var(--font-mono); color: #cbd5e1;
+      }
+      .profile { display: flex; align-items: center; gap: 0.55rem; padding: 0.6rem 0.75rem; border: 1px solid var(--card-border); border-radius: 0.7rem; margin-bottom: 0.5rem; background: rgba(5, 8, 22, 0.4); }
+      .profile .name { font-family: var(--font-head); font-weight: 600; }
+      .badge { font-size: 0.7rem; padding: 0.12rem 0.55rem; border-radius: 999px; background: rgba(148, 163, 184, 0.18); color: var(--muted); font-family: var(--font-mono); }
+      .badge.live { background: rgba(245, 165, 36, 0.18); color: var(--amber); }
+      .badge.active { background: rgba(0, 255, 153, 0.16); color: var(--profit); }
       .profile .spacer { flex: 1; }
-      .profile button { flex: 0 0 auto; width: auto; padding: 0.3rem 0.6rem; font-size: 0.78rem; }
-      .coincard { border: 1px solid #8883; border-radius: 0.7rem; padding: 0.8rem 1rem; margin-bottom: 0.6rem; }
+      .profile button { flex: 0 0 auto; width: auto; padding: 0.32rem 0.6rem; font-size: 0.76rem; }
+      .coincard { border: 1px solid var(--card-border); border-radius: 0.8rem; padding: 0.85rem 1rem; margin-bottom: 0.6rem; background: rgba(5, 8, 22, 0.4); }
       .coincard .top { display: flex; align-items: baseline; gap: 0.5rem; }
-      .coincard .sym { font-weight: 700; font-size: 1.05rem; }
-      .coincard .pnl { font-weight: 700; }
-      .coincard .pos { color: #16a34a; }
-      .coincard .neg { color: #dc2626; }
-      .coincard .sub { display: flex; gap: 1.2rem; color: #888; font-size: 0.8rem; margin-top: 0.3rem; }
+      .coincard .sym { font-family: var(--font-head); font-weight: 700; font-size: 1.05rem; }
+      .coincard .pnl { font-family: var(--font-mono); font-weight: 700; }
+      .coincard .pos { color: var(--profit); text-shadow: 0 0 12px rgba(0, 255, 153, 0.4); }
+      .coincard .neg { color: var(--loss); }
+      .coincard .sub { display: flex; gap: 1.2rem; color: var(--muted); font-size: 0.78rem; margin-top: 0.35rem; font-family: var(--font-mono); }
       .ticket { display: grid; gap: 0.55rem; }
       .ticket label { margin-top: 0; }
       .side { display: flex; gap: 0.5rem; }
-      .side button { flex: 1; padding: 0.6rem; font-weight: 700; background: #8882; color: inherit; border: 1px solid transparent; }
-      .side button.long.on { background: #16a34a; color: #fff; }
-      .side button.short.on { background: #dc2626; color: #fff; }
+      .side button { flex: 1; padding: 0.65rem; font-weight: 700; font-family: var(--font-head); background: rgba(148, 163, 184, 0.12); color: var(--text); border: 1px solid transparent; }
+      .side button.long.on { background: rgba(0, 255, 153, 0.16); color: var(--profit); border-color: rgba(0, 255, 153, 0.5); box-shadow: 0 0 16px -4px rgba(0, 255, 153, 0.5); }
+      .side button.short.on { background: rgba(255, 77, 109, 0.16); color: var(--loss); border-color: rgba(255, 77, 109, 0.5); box-shadow: 0 0 16px -4px rgba(255, 77, 109, 0.5); }
       .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
       .lev { display: flex; align-items: center; gap: 0.6rem; }
-      .lev input[type="range"] { flex: 1; accent-color: var(--accent); }
-      .fav { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
-      .fav .sym { font-weight: 600; cursor: pointer; }
-      .fav .px { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.15; }
+      .lev input[type="range"] { flex: 1; accent-color: var(--primary); }
+      .fav { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; border: 1px solid var(--card-border); border-radius: 0.7rem; margin-bottom: 0.5rem; background: rgba(5, 8, 22, 0.4); }
+      .fav .sym { font-family: var(--font-mono); font-weight: 600; cursor: pointer; color: var(--primary); }
+      .fav .px { margin-left: auto; text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; line-height: 1.15; }
       .fav .px .chg { font-size: 0.72rem; }
-      .fav .iconbtn { flex: 0 0 auto; width: auto; padding: 0.3rem 0.5rem; background: #8882; color: inherit; font-weight: 600; }
-      .up { color: #16a34a; } .down { color: #dc2626; }
-      .gai { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: inherit; margin: 0.2rem 0; }
+      .fav .iconbtn { flex: 0 0 auto; width: auto; padding: 0.3rem 0.5rem; background: rgba(148, 163, 184, 0.14); color: var(--text); font-weight: 600; }
+      .up { color: var(--profit); } .down { color: var(--loss); }
+      .gai { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--text); margin: 0.2rem 0; }
       .gai input { width: auto; }
       .statgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.8rem; }
-      .stat { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.6rem; text-align: center; }
-      .stat .k { font-size: 0.72rem; color: #888; }
-      .stat .v { font-weight: 700; font-size: 1.05rem; margin-top: 0.15rem; }
-      .verdict { margin-top: 0.6rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: #8881; font-weight: 600; text-align: center; }
-      .trade { display: flex; gap: 0.5rem; align-items: center; padding: 0.35rem 0; border-bottom: 1px solid #8881; font-size: 0.82rem; }
+      .stat { border: 1px solid var(--card-border); border-radius: 0.7rem; padding: 0.65rem; text-align: center; background: rgba(5, 8, 22, 0.4); }
+      .stat .k { font-size: 0.7rem; color: var(--muted); }
+      .stat .v { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; margin-top: 0.15rem; }
+      .verdict { margin-top: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 0.6rem; background: rgba(0, 245, 255, 0.08); border: 1px solid var(--card-border); font-weight: 600; text-align: center; font-family: var(--font-head); }
+      .trade { display: flex; gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12); font-size: 0.82rem; }
       .trade:last-child { border-bottom: 0; }
-      .trade .tside { font-weight: 700; text-transform: uppercase; }
-      .trade .tpnl { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
-      .grun { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.5rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.82rem; display: flex; gap: 0.5rem; align-items: center; }
-      .grun .gp { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .trade .tside { font-weight: 700; text-transform: uppercase; font-family: var(--font-head); }
+      .trade .tpnl { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+      .grun { border: 1px solid var(--card-border); border-radius: 0.7rem; padding: 0.55rem 0.75rem; margin-bottom: 0.4rem; font-size: 0.82rem; display: flex; gap: 0.5rem; align-items: center; background: rgba(5, 8, 22, 0.4); }
+      .grun .gp { margin-left: auto; font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+      /* ---- HOME view ---- */
+      .hero {
+        margin-top: 1rem; border-radius: 1.1rem; padding: 1.3rem 1.25rem; position: relative; overflow: hidden;
+        border: 1px solid var(--card-border); background:
+          radial-gradient(120% 120% at 0% 0%, rgba(0, 102, 255, 0.22), transparent 60%),
+          var(--card);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--shadow);
+      }
+      .hero .hlabel { font-size: 0.8rem; color: var(--muted); letter-spacing: 0.3px; }
+      .hero .hnum { font-family: var(--font-mono); font-weight: 700; font-size: 2.5rem; line-height: 1.1; margin: 0.2rem 0 0.1rem; }
+      .hero .hnum.pos { color: var(--profit); text-shadow: 0 0 22px rgba(0, 255, 153, 0.45); }
+      .hero .hnum.neg { color: var(--loss); text-shadow: 0 0 22px rgba(255, 77, 109, 0.35); }
+      .hero .hpct { font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; }
+      #home-spark { margin-top: 0.4rem; min-height: 0.2rem; }
+      .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-top: 1rem; }
+      .kpi { border: 1px solid var(--card-border); border-radius: 0.9rem; padding: 0.85rem 0.7rem; text-align: center; background: var(--card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+      .kpi .k { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.3px; }
+      .kpi .v { font-family: var(--font-mono); font-weight: 700; font-size: 1.2rem; margin-top: 0.25rem; }
+      .aicard { display: flex; align-items: center; gap: 0.9rem; }
+      .aicard .mascot { width: 3.1rem; height: 3.1rem; }
+      .aicard .atext { flex: 1; }
+      .aicard .ahead { font-family: var(--font-head); font-weight: 600; font-size: 0.98rem; }
+      .aicard .asub { font-size: 0.82rem; color: var(--muted); margin-top: 0.2rem; }
+      .aicard .asub b { font-family: var(--font-mono); color: var(--text); font-weight: 600; }
+      .cta { width: 100%; margin-top: 1rem; padding: 0.9rem; font-size: 1.02rem; font-family: var(--font-head); }
+
       .hidden { display: none; }
     </style>
   </head>
   <body>
+    <!-- inline SVG mascot template, cloned by JS into home view -->
+    <template id="mascot-tpl">
+      <svg class="mascot" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="novaG2" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
+          </linearGradient>
+        </defs>
+        <rect x="6" y="16" width="6" height="20" rx="3" fill="url(#novaG2)"/>
+        <rect x="52" y="16" width="6" height="20" rx="3" fill="url(#novaG2)"/>
+        <rect x="13" y="12" width="38" height="34" rx="12" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2"/>
+        <rect x="29" y="4" width="6" height="8" rx="3" fill="url(#novaG2)"/>
+        <circle cx="32" cy="3" r="2.5" fill="#00F5FF"/>
+        <circle class="eye" cx="25" cy="29" r="4" fill="#00F5FF"/>
+        <circle class="eye" cx="39" cy="29" r="4" fill="#00F5FF"/>
+        <path d="M24 39 Q32 44 40 39" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
+      </svg>
+    </template>
+
     <main>
       <div class="appbar">
-        <h1>Aliza</h1>
+        <div class="brand">
+          <svg class="mascot" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="6" y="16" width="6" height="20" rx="3" fill="url(#novaG)"/>
+            <rect x="52" y="16" width="6" height="20" rx="3" fill="url(#novaG)"/>
+            <rect x="13" y="12" width="38" height="34" rx="12" fill="#0b1220" stroke="url(#novaG)" stroke-width="2"/>
+            <rect x="29" y="4" width="6" height="8" rx="3" fill="url(#novaG)"/>
+            <circle cx="32" cy="3" r="2.5" fill="#00F5FF"/>
+            <circle class="eye" cx="25" cy="29" r="4" fill="#00F5FF"/>
+            <circle class="eye" cx="39" cy="29" r="4" fill="#00F5FF"/>
+            <path d="M24 39 Q32 44 40 39" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
+            <defs>
+              <linearGradient id="novaG" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div>
+            <div class="word">🤖 ANNY</div>
+            <div class="sub">AI Trading Companion</div>
+          </div>
+        </div>
         <span class="spacer"></span>
         <span class="who hidden" id="who"></span>
-        <button class="ghost hidden" id="logout" style="flex:0 0 auto;width:auto;padding:0.35rem 0.7rem">Log out</button>
+        <button class="ghost hidden" id="logout" style="flex:0 0 auto;width:auto;padding:0.4rem 0.75rem">Log out</button>
       </div>
 
-      <div class="nav hidden" id="nav">
-        <button data-view="orders" class="on">Orders</button>
-        <button data-view="history">History</button>
-        <button data-view="settings">Settings</button>
-      </div>
+      <!-- HOME -->
+      <section id="view-home" class="hidden">
+        <p class="greeting" id="home-greeting">Good evening, Captain 👋</p>
+        <div class="hero">
+          <div class="hlabel">Today's Profit</div>
+          <div class="hnum mono pos" id="home-pnl">—</div>
+          <div class="hpct mono" id="home-pnl-pct">&nbsp;</div>
+          <div id="home-spark"></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="k">Capital</div><div class="v" id="home-capital">—</div></div>
+          <div class="kpi"><div class="k">Risk</div><div class="v" id="home-risk">—</div></div>
+          <div class="kpi"><div class="k">Winrate</div><div class="v" id="home-winrate">—</div></div>
+        </div>
+        <div class="card aicard">
+          <span id="home-mascot"></span>
+          <div class="atext">
+            <div class="ahead">Everything looks healthy.</div>
+            <div class="asub">Market trend <b id="home-market">—</b> · Confidence <b id="home-confidence">—</b></div>
+          </div>
+        </div>
+        <button class="primary cta" id="home-start" type="button">Start Trading →</button>
+      </section>
 
       <!-- LOGIN -->
       <section id="view-login">
@@ -102,7 +287,7 @@
             <p style="margin:0.3rem 0 0.6rem">One click — same account as the bot.</p>
             <div id="tgWidget"></div>
             <div class="msg" id="tgMsg"></div>
-            <details style="margin-top:0.6rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Or use a username &amp; password</summary><div id="pwBox"></div></details>
+            <details style="margin-top:0.6rem"><summary style="cursor:pointer;color:var(--muted);font-size:0.85rem">Or use a username &amp; password</summary><div id="pwBox"></div></details>
           </div>
           <div id="pwForm">
             <strong>Register / Log in</strong>
@@ -119,7 +304,7 @@
         </div>
       </section>
 
-      <!-- ORDERS -->
+      <!-- ORDERS (Trade) -->
       <section id="view-orders" class="hidden">
         <div class="card">
           <strong>Open position</strong>
@@ -133,11 +318,11 @@
               <label for="t-sym">Symbol</label>
               <div class="cmdrow">
                 <input id="t-sym" placeholder="BTC" autocomplete="off" />
-                <button class="ghost" id="t-last" type="button" style="flex:0 0 auto;width:auto;white-space:nowrap">Last <span id="t-px">—</span></button>
+                <button class="ghost" id="t-last" type="button" style="flex:0 0 auto;width:auto;white-space:nowrap">Last <span id="t-px" class="mono">—</span></button>
               </div>
             </div>
             <div>
-              <label>Leverage <span id="t-levval" style="color:inherit;font-weight:700">3x</span></label>
+              <label>Leverage <span id="t-levval" class="mono" style="color:var(--primary);font-weight:700">3x</span></label>
               <div class="lev"><input type="range" id="t-lev" min="1" max="20" value="3" /></div>
             </div>
             <div class="grid2">
@@ -181,7 +366,7 @@
           <pre id="g-out" class="output hidden"></pre>
           <div id="g-spark"></div>
           <div id="g-stats" class="statgrid hidden"></div>
-          <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
+          <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:var(--muted);font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
           <div id="g-history" style="margin-top:0.9rem"></div>
         </div>
 
@@ -255,6 +440,26 @@
       </section>
     </main>
 
+    <!-- bottom nav -->
+    <div class="nav hidden" id="nav">
+      <button data-view="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        Home
+      </button>
+      <button data-view="orders" class="on">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 5-7 4 5"/><path d="M3 21h18"/></svg>
+        Trade
+      </button>
+      <button data-view="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
+        History
+      </button>
+      <button data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.3-1.3L14 3h-4l-.3 2.2A7 7 0 0 0 7.4 6.5l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.3 1.3L10 21h4l.3-2.2a7 7 0 0 0 2.3-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z"/></svg>
+        Settings
+      </button>
+    </div>
+
     <script>
       const $ = (id) => document.getElementById(id);
       // Telegram Mini App handle — non-null only inside Telegram, where the
@@ -264,11 +469,8 @@
       const inMiniApp = !!tgApp;
       function applyTgTheme(tg) {
         const tp = tg.themeParams || {};
-        if (tp.bg_color) document.body.style.background = tp.bg_color;
-        if (tp.text_color) document.body.style.color = tp.text_color;
-        if (tp.button_color) document.documentElement.style.setProperty("--accent", tp.button_color);
-        try { document.documentElement.style.colorScheme = tg.colorScheme || "dark"; } catch (_) {}
-        try { tg.setHeaderColor && tg.setHeaderColor(tp.bg_color || "#000000"); } catch (_) {}
+        try { tg.setHeaderColor && tg.setHeaderColor(tp.bg_color || "#050816"); } catch (_) {}
+        try { tg.setBackgroundColor && tg.setBackgroundColor("#050816"); } catch (_) {}
       }
       function authHeaders() {
         const t = localStorage.getItem("token");
@@ -279,16 +481,18 @@
       // ---- views / nav / url routing ----
       function pathView() {
         const p = location.pathname.replace(/\/+$/, "");
+        if (p === "" || p === "/home") return "home";
         if (p === "/history") return "history";
         if (p === "/setting" || p === "/settings") return "settings";
         if (p === "/order" || p === "/orders") return "orders";
-        return "orders";
+        return "home";
       }
       function showView(name) {
-        ["orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
+        ["home", "orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
+        if (name === "home") loadHome();
         if (name === "history") loadHistory();
-        if (tgApp && tgApp.BackButton) { name === "orders" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
+        if (tgApp && tgApp.BackButton) { name === "home" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
       }
       function navigate(view) {
         const path = "/" + (view === "orders" ? "orders" : view);
@@ -298,24 +502,42 @@
       document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => navigate(b.dataset.view)));
       window.onpopstate = () => { if (localStorage.getItem("token")) showView(pathView()); };
 
+      // greeting + mascot for home
+      function timeGreeting() {
+        const h = new Date().getHours();
+        if (h < 12) return "Good morning";
+        if (h < 18) return "Good afternoon";
+        return "Good evening";
+      }
+      function mountMascots() {
+        const tpl = $("mascot-tpl");
+        const slot = $("home-mascot");
+        if (tpl && slot && !slot.childElementCount) slot.appendChild(tpl.content.cloneNode(true));
+      }
+
       function setProfile(p) {
         if (p) localStorage.setItem("profile", JSON.stringify(p));
         const prof = JSON.parse(localStorage.getItem("profile") || "null");
+        const name = prof && prof.name ? prof.name : "Captain";
+        $("home-greeting").innerHTML = timeGreeting() + ", <span>" + escapeHtml(name) + "</span> 👋";
         if (!prof) return;
         $("who").innerHTML = (prof.photo ? `<img src="${escapeHtml(prof.photo)}"/>` : "") + `<span>${escapeHtml(prof.name || "trader")}</span>`;
         $("who").classList.remove("hidden");
       }
       function onAuthed(profile) {
         if (profile) setProfile(profile); else setProfile();
+        mountMascots();
         $("nav").classList.remove("hidden");
         $("logout").classList.remove("hidden");
-        showView(pathView());
+        const v = pathView();
+        showView(v === "login" ? "home" : v);
         refreshKeyStatus();
         connectStream();
         renderFavs();
         startPricePolling();
         loadGoalHistory();
         loadStatus();
+        loadHome();
       }
       $("logout").onclick = () => {
         localStorage.removeItem("token");
@@ -327,9 +549,48 @@
         $("who").classList.add("hidden");
         showView("login");
       };
+      $("home-start").onclick = () => navigate("orders");
+
+      // ---- home KPIs (real data only) ----
+      async function loadHome() {
+        // report → today's profit + winrate + derived market trend
+        try {
+          const d = await (await fetch("/api/report", { headers: authHeaders() })).json();
+          const pnl = (d && d.total_pnl != null) ? Number(d.total_pnl) : null;
+          const pnlEl = $("home-pnl");
+          if (pnl == null || !isFinite(pnl)) { pnlEl.textContent = "—"; pnlEl.className = "hnum mono"; $("home-pnl-pct").innerHTML = "&nbsp;"; }
+          else {
+            const pos = pnl >= 0;
+            pnlEl.textContent = (pos ? "+" : "") + pnl.toFixed(2) + " USDT";
+            pnlEl.className = "hnum mono " + (pos ? "pos" : "neg");
+            $("home-pnl-pct").innerHTML = `<span class="${pos ? "up" : "down"}">${pos ? "▲" : "▼"}</span> derived from realized PnL`;
+            $("home-market").textContent = pos ? "Bullish" : "Bearish";
+            $("home-market").className = pos ? "up" : "down";
+            $("home-confidence").textContent = "derived";
+          }
+          const wr = (d && d.win_rate != null) ? Number(d.win_rate) : null;
+          $("home-winrate").textContent = (wr == null || !isFinite(wr)) ? "—" : wr + "%";
+          // optional sparkline source from report
+          const curve = (d && Array.isArray(d.curve)) ? d.curve : (d && Array.isArray(d.equity_curve)) ? d.equity_curve : null;
+          $("home-spark").innerHTML = (curve && curve.length) ? sparkline(curve.map(Number)) : "";
+        } catch (_) {
+          $("home-pnl").textContent = "—"; $("home-pnl").className = "hnum mono";
+          $("home-winrate").textContent = "—"; $("home-market").textContent = "—"; $("home-confidence").textContent = "—";
+        }
+        // goal history → capital + risk from latest run
+        try {
+          const g = await (await fetch("/api/goal/history", { headers: authHeaders() })).json();
+          const runs = (g && g.runs) || [];
+          if (runs.length) {
+            const r0 = runs[0];
+            $("home-capital").textContent = (r0.capital != null) ? escapeHtml(String(r0.capital)) : "—";
+            $("home-risk").textContent = (r0.risk_pct != null) ? escapeHtml(String(r0.risk_pct)) + "%" : "—";
+          } else { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
+        } catch (_) { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
+      }
 
       // ---- auth: password ----
-      function show(text, ok) { $("msg").textContent = text; $("msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function show(text, ok) { $("msg").textContent = text; $("msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
       async function submit(path) {
         try {
           const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -348,7 +609,7 @@
           const r = await fetch("/api/telegram-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
           const d = await r.json().catch(() => ({}));
           if (r.ok && d.token) { localStorage.setItem("token", d.token); onAuthed({ name: user.username || user.first_name, photo: user.photo_url }); }
-          else { $("tgMsg").textContent = d.error || "Login failed"; $("tgMsg").style.color = "#dc2626"; }
+          else { $("tgMsg").textContent = d.error || "Login failed"; $("tgMsg").style.color = "var(--loss)"; }
         } catch (e) { $("tgMsg").textContent = "Network error"; }
       };
       fetch("/api/auth-config").then((r) => r.json()).then((cfg) => {
@@ -365,7 +626,7 @@
       }).catch(() => {});
 
       // ---- API key profiles ----
-      function keyMsg(t, ok) { $("keyMsg").textContent = t; $("keyMsg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function keyMsg(t, ok) { $("keyMsg").textContent = t; $("keyMsg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
       async function refreshKeyStatus() {
         try {
           const d = await (await fetch("/api/credentials", { headers: authHeaders() })).json();
@@ -400,7 +661,7 @@
         const w = 280, h = 48, pad = 3, min = Math.min(0, ...vals), max = Math.max(0, ...vals), range = max - min || 1;
         const y = (v) => h - pad - ((v - min) / range) * (h - 2 * pad);
         const pts = vals.map((v, i) => `${(pad + (i / Math.max(1, vals.length - 1)) * (w - 2 * pad)).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-        const color = vals[vals.length - 1] >= 0 ? "#16a34a" : "#dc2626";
+        const color = vals[vals.length - 1] >= 0 ? "#00FF99" : "#FF4D6D";
         return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="margin-top:0.5rem"><line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="#8884" stroke-dasharray="3"/><polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
       }
       async function runCommand(command) {
@@ -487,7 +748,7 @@
 
       // ---- order ticket ----
       let ticketSide = "long";
-      function ticketMsg(t, ok) { $("t-msg").textContent = t || ""; $("t-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function ticketMsg(t, ok) { $("t-msg").textContent = t || ""; $("t-msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
       function setSide(s) { ticketSide = s; $("side-long").classList.toggle("on", s === "long"); $("side-short").classList.toggle("on", s === "short"); }
       function updateTicketPrice() {
         const t = priceCache[normSym($("t-sym").value)];
@@ -540,7 +801,7 @@
       };
 
       // ---- goal (paper backtest on real data) ----
-      function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
       function fmtPnl(v) { const n = Number(v) || 0; return (n >= 0 ? "+" : "") + (Math.round(n * 100) / 100); }
       function verdictText(v) {
         return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: max drawdown", max_trades: "⏹ Stopped: max trades", continue: "Ran out of history before a stop rule" })[v] || v || "";
@@ -560,7 +821,7 @@
         $("g-stats").classList.remove("hidden");
         const trades = d.trades || [];
         $("g-trades").innerHTML = trades.length
-          ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:#888">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
+          ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:var(--muted)">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
           : "<p style='font-size:0.85rem'>No trades.</p>";
         $("g-tradeswrap").classList.toggle("hidden", trades.length === 0);
         if (d.ai) goalMsg(d.ai, true);
@@ -590,7 +851,7 @@
           if (!runs.length) { $("g-history").innerHTML = ""; return; }
           $("g-history").innerHTML = "<label>Recent runs</label>" + runs.slice(0, 8).map((x) => {
             const pnl = Number(x.realized_pnl || 0);
-            return `<div class="grun"><span><b>${escapeHtml(x.symbol)}</b> ${escapeHtml(x.strategy)}${x.used_ai ? " · AI" : ""}</span><span style="color:#888">${Math.round(x.win_rate_pct || 0)}% · ${x.trades}t</span><span class="gp ${pnl >= 0 ? "up" : "down"}">${fmtPnl(pnl)}</span></div>`;
+            return `<div class="grun"><span><b>${escapeHtml(x.symbol)}</b> ${escapeHtml(x.strategy)}${x.used_ai ? " · AI" : ""}</span><span style="color:var(--muted)">${Math.round(x.win_rate_pct || 0)}% · ${x.trades}t</span><span class="gp ${pnl >= 0 ? "up" : "down"}">${fmtPnl(pnl)}</span></div>`;
           }).join("");
         } catch (e) {}
       }
@@ -600,7 +861,7 @@
         try {
           const d = await (await fetch("/api/history", { headers: authHeaders() })).json();
           $("report").innerHTML = [
-            ["Trades", d.trades], ["Win rate", (d.win_rate ?? 0) + "%"], ["Total PnL", (d.total_pnl ?? 0) + " USDT"],
+            ["Trades", d.trades ?? 0], ["Win rate", (d.win_rate ?? 0) + "%"], ["Total PnL", (d.total_pnl ?? 0) + " USDT"],
             ["Wins / Losses", (d.wins ?? 0) + " / " + (d.losses ?? 0)], ["Expectancy", d.expectancy ?? 0],
           ].map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join("");
           const sym = d.by_symbol || {};
@@ -614,7 +875,7 @@
 
       // ---- live positions ----
       let stream = null;
-      function streamShow(t, ok) { $("stream-msg").textContent = t; $("stream-msg").style.color = ok ? "#16a34a" : "#888"; }
+      function streamShow(t, ok) { $("stream-msg").textContent = t; $("stream-msg").style.color = ok ? "var(--profit)" : "var(--muted)"; }
       function renderEvent(kind, e) {
         let d = {}; try { d = JSON.parse(e.data); } catch (_) { return; }
         const when = new Date(d.at || Date.now()).toLocaleTimeString();

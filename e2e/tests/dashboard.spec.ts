@@ -18,11 +18,19 @@ async function registerAndLogin(page: Page) {
     page.click("#login"),
   ]);
   await expect(page.locator("#nav")).toBeVisible();
+  // After login the default tab is Home (NOVA companion).
+  await expect(page.locator("#view-home")).toBeVisible();
+}
+
+// Open the Trade tab, where the order ticket, goal form, and command console live.
+async function gotoTrade(page: Page) {
+  await page.click('#nav button[data-view="orders"]');
   await expect(page.locator("#view-orders")).toBeVisible();
 }
 
 test("login → goal paper run shows real stats", async ({ page }) => {
   await registerAndLogin(page);
+  await gotoTrade(page);
 
   await page.fill("#g-profit", "5");
   await page.fill("#g-capital", "100");
@@ -44,6 +52,7 @@ test("login → goal paper run shows real stats", async ({ page }) => {
 
 test("order ticket present and pages navigate", async ({ page }) => {
   await registerAndLogin(page);
+  await gotoTrade(page);
 
   await expect(page.locator("#side-long")).toBeVisible();
   await expect(page.locator("#side-short")).toBeVisible();
@@ -63,6 +72,7 @@ test("order ticket present and pages navigate", async ({ page }) => {
 
 test("malformed trade surfaces the parser's specific guidance", async ({ page }) => {
   await registerAndLogin(page);
+  await gotoTrade(page);
 
   // Missing the "usdt" suffix on size — the parser explains exactly that.
   await page.fill("#cmd", "long BTC 3x entry 67500 sl 65000 tp 72000 size 100");
@@ -73,6 +83,7 @@ test("malformed trade surfaces the parser's specific guidance", async ({ page })
 
 test("goal run with AI toggle falls back gracefully (no key configured)", async ({ page }) => {
   await registerAndLogin(page);
+  await gotoTrade(page);
 
   await page.check("#g-ai");
   await page.fill("#g-profit", "5");
