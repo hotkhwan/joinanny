@@ -440,7 +440,9 @@ func (s *Server) handleDeleteCredential(c fiber.Ctx) error {
 		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "credentials are not enabled"})
 	}
 	profile := strings.TrimSpace(c.Query("profile"))
-	if profile == "" {
+	// An empty profile is allowed only with ?unnamed=1, so a legacy unnamed
+	// profile can be cleaned up; otherwise a name is required.
+	if profile == "" && c.Query("unnamed") != "1" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "profile query param is required"})
 	}
 	if err := s.credentials.DeleteProfile(c.Context(), claimsOf(c).Subject, profile); err != nil {

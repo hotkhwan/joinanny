@@ -171,7 +171,10 @@ func (s *CredentialService) SetActive(ctx context.Context, userID, profile strin
 // remain, the first remaining profile is promoted to active so the user is never
 // left with profiles but none active.
 func (s *CredentialService) DeleteProfile(ctx context.Context, userID, profile string) error {
-	profile = normalizeProfile(profile)
+	// Delete the exact stored name. Stored names are already normalized on save,
+	// so the caller passes the name shown to the user — including an empty string
+	// for a legacy unnamed profile, which normalizing would wrongly retarget.
+	profile = strings.TrimSpace(profile)
 	if err := s.repo.Remove(ctx, userID, profile); err != nil {
 		return err
 	}
