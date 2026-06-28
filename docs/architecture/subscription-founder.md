@@ -64,10 +64,15 @@ Commander (until v1.0)`. People will want the **badge** more than Commander itse
 ## Build order (don't build expiry early)
 
 1. ✅ `PRIVATE_BETA` + pioneer perk (approved → Commander during beta) — done.
-2. ✅ Admin tools: `/pending` (with timestamps), `/approve <id> [plan]`, `/reject <id>`, web revoke.
-3. ⏳ Near launch: `Subscription` struct + `FounderNumber` counter (cap Mission Zero at 32/64),
-   `ExpiresAt` checks in `tierOfSubject`/`/api/me`, Founder badge on Profile, and the
-   GA-downgrade (Commander → Captain-lifetime for founders) when `PRIVATE_BETA=false`.
+2. ✅ Admin tools: `/members` + `/pending` (timestamps), `/approve <id> [plan]`, `/reject`,
+   `/makeadmin`, web Members console + revoke + promote.
+3. ✅ `FounderNumber` + `MissionZeroCap` (32): approving during private beta mints the next
+   founder number up to the cap; `tierOfSubject` keeps founders on **Captain after GA**
+   (`PRIVATE_BETA=false`) while non-founders fall to Crew; `/api/me` exposes `founder`/
+   `founder_number`; the 🟣 Founder #N badge shows in the header on every page.
+4. ⏳ Later (optional): a full `Subscription` struct ({Plan, Status, Source, ExpiresAt}) +
+   per-user `ExpiresAt` for campaigns/referrals/gifts; a Profile page. Today the GA flip is
+   the expiry and the badge lives in the header.
 
 Aligns with the Legal Gate ([../legal/thai-sec-design-principles.md](../legal/thai-sec-design-principles.md)):
 the Founder offer is access/identity, never a guaranteed-return or solicitation.

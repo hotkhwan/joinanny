@@ -22,13 +22,14 @@ import (
 // The admin is always approved. Records are keyed by JWT subject.
 
 type AccessRecord struct {
-	Subject     string    `json:"subject" bson:"_id"`
-	Name        string    `json:"name" bson:"name"`
-	Status      string    `json:"status" bson:"status"`                 // requested | approved | revoked
-	Tier        string    `json:"tier,omitempty" bson:"tier,omitempty"` // free | captain | commander
-	Role        string    `json:"role,omitempty" bson:"role,omitempty"` // "" (member) | admin
-	RequestedAt time.Time `json:"requested_at" bson:"requested_at"`
-	ApprovedAt  time.Time `json:"approved_at,omitempty" bson:"approved_at,omitempty"`
+	Subject       string    `json:"subject" bson:"_id"`
+	Name          string    `json:"name" bson:"name"`
+	Status        string    `json:"status" bson:"status"`                                     // requested | approved | revoked
+	Tier          string    `json:"tier,omitempty" bson:"tier,omitempty"`                     // free | captain | commander
+	Role          string    `json:"role,omitempty" bson:"role,omitempty"`                     // "" (member) | admin
+	FounderNumber int       `json:"founder_number,omitempty" bson:"founder_number,omitempty"` // 0 = not a founder
+	RequestedAt   time.Time `json:"requested_at" bson:"requested_at"`
+	ApprovedAt    time.Time `json:"approved_at,omitempty" bson:"approved_at,omitempty"`
 }
 
 const (
@@ -36,6 +37,11 @@ const (
 	accessApproved  = "approved"
 	accessRevoked   = "revoked"
 	roleAdmin       = "admin"
+
+	// MissionZeroCap is how many private-beta founders get a lifetime Founder
+	// badge + Commander-until-GA (then Captain-lifetime). See
+	// docs/architecture/subscription-founder.md.
+	MissionZeroCap = 32
 )
 
 // AccessStore persists per-user access state.
@@ -48,6 +54,9 @@ type AccessStore interface {
 	SetRole(ctx context.Context, subject, role string) error
 	Pending(ctx context.Context) ([]AccessRecord, error)
 	All(ctx context.Context) ([]AccessRecord, error)
+	// AssignFounder returns the subject's founder number — existing if already a
+	// founder, the next one if under cap, or 0 when the cap is reached.
+	AssignFounder(ctx context.Context, subject string, cap int) (int, error)
 }
 
 func (s *Server) isAdmin(c fiber.Ctx) bool {
@@ -140,31 +149,31 @@ func (s *Server) handleMe(c fiber.Ctx) error {
 	if s.aiFreeForSubject(c.Context(), subject) {
 		aiLimit = -1 // unlimited shared AI during closed beta (or admin)
 	}
-	// Badge: a founder is anyone approved during private beta (a pioneer); admins
-	// always carry the admin badge too.
+	// Badge: a Founder is anyone holding a founder number (lifetime). The admin
+	// always carries the admin badge.
 	founder := false
+	founderNumber := 0
 	if rec, ok, err := s.access.Get(c.Context(), subject); err == nil && ok {
-		founder = s.cfg.App.PrivateBeta && rec.Status == accessApproved
-	}
-	if admin && s.cfg.App.PrivateBeta {
-		founder = true
+		founderNumber = rec.FounderNumber
+		founder = rec.FounderNumber > 0
 	}
 	return c.JSON(fiber.Map{
-		"version":       version.Version,
-		"subject":       subject,
-		"username":      claimsOf(c).Username,
-		"admin":         admin,
-		"root_admin":    s.isAdminSubject(subject),
-		"founder":       founder,
-		"approved":      approved,
-		"status":        status,
-		"open":          s.cfg.App.AccessOpen,
-		"tier":          tier,
-		"tier_title":    tierTitle(tier),
-		"ai_limit":      aiLimit,
-		"ai_used":       s.usage.Get(subject, "ai"),
-		"mission_limit": lim.MissionsPerDay,
-		"mission_used":  s.usage.Get(subject, "mission"),
+		"version":        version.Version,
+		"subject":        subject,
+		"username":       claimsOf(c).Username,
+		"admin":          admin,
+		"root_admin":     s.isAdminSubject(subject),
+		"founder":        founder,
+		"founder_number": founderNumber,
+		"approved":       approved,
+		"status":         status,
+		"open":           s.cfg.App.AccessOpen,
+		"tier":           tier,
+		"tier_title":     tierTitle(tier),
+		"ai_limit":       aiLimit,
+		"ai_used":        s.usage.Get(subject, "ai"),
+		"mission_limit":  lim.MissionsPerDay,
+		"mission_used":   s.usage.Get(subject, "mission"),
 	})
 }
 
@@ -275,7 +284,23 @@ func (s *Server) handleAdminApprove(c fiber.Ctx) error {
 	if err := s.access.Approve(c.Context(), body.Subject); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not approve"})
 	}
-	return c.JSON(fiber.Map{"approved": body.Subject})
+	num := s.maybeAssignFounder(c.Context(), body.Subject)
+	return c.JSON(fiber.Map{"approved": body.Subject, "founder_number": num})
+}
+
+// maybeAssignFounder mints a Founder badge for a newly-approved member during
+// private beta, up to the Mission Zero cap. Returns the founder number (0 = not
+// a founder). Best-effort: an error never blocks the approval.
+func (s *Server) maybeAssignFounder(ctx context.Context, subject string) int {
+	if !s.cfg.App.PrivateBeta || s.access == nil {
+		return 0
+	}
+	num, err := s.access.AssignFounder(ctx, subject, MissionZeroCap)
+	if err != nil {
+		s.logger.Warn("assign founder failed", "error", err)
+		return 0
+	}
+	return num
 }
 
 // handleAdminRevoke revokes a user's access (admin only): they lose the app
@@ -386,6 +411,28 @@ func (m *memAccess) Pending(_ context.Context) ([]AccessRecord, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt.Before(out[j].RequestedAt) })
 	return out, nil
+}
+
+func (m *memAccess) AssignFounder(_ context.Context, subject string, cap int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec := m.recs[subject]
+	if rec.FounderNumber > 0 {
+		return rec.FounderNumber, nil
+	}
+	max := 0
+	for _, r := range m.recs {
+		if r.FounderNumber > max {
+			max = r.FounderNumber
+		}
+	}
+	if max >= cap {
+		return 0, nil
+	}
+	rec.Subject = subject
+	rec.FounderNumber = max + 1
+	m.recs[subject] = rec
+	return rec.FounderNumber, nil
 }
 
 func (m *memAccess) All(_ context.Context) ([]AccessRecord, error) {

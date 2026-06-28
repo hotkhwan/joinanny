@@ -147,7 +147,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	runner.SetCampaignManager(a.buildCampaignManager(orderService, broadcaster))
 	if store, ok := signalStore.(*mongostore.Store); ok {
-		runner.SetCrew(crewAdmin{store: newMongoAccess(store.AccessCollection())})
+		runner.SetCrew(crewAdmin{store: newMongoAccess(store.AccessCollection()), privateBeta: a.cfg.App.PrivateBeta})
 	}
 
 	if a.cfg.HTTP.Enabled {
@@ -207,7 +207,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	}
 	runner.SetCampaignManager(a.buildCampaignManager(orderService, broadcaster))
 	if store, ok := signalStore.(*mongostore.Store); ok {
-		runner.SetCrew(crewAdmin{store: newMongoAccess(store.AccessCollection())})
+		runner.SetCrew(crewAdmin{store: newMongoAccess(store.AccessCollection()), privateBeta: a.cfg.App.PrivateBeta})
 	}
 
 	return runner.Run(ctx)

@@ -15,7 +15,10 @@ import (
 
 // crewAdmin adapts the access store to the Telegram handler's CrewAdmin, so the
 // bot's /pending and /approve commands act on the same approvals as the web.
-type crewAdmin struct{ store api.AccessStore }
+type crewAdmin struct {
+	store       api.AccessStore
+	privateBeta bool
+}
 
 func (c crewAdmin) Pending(ctx context.Context) ([]telegram.CrewMember, error) {
 	recs, err := c.store.Pending(ctx)
@@ -42,7 +45,14 @@ func (c crewAdmin) Members(ctx context.Context) ([]telegram.CrewMember, error) {
 }
 
 func (c crewAdmin) Approve(ctx context.Context, subject string) error {
-	return c.store.Approve(ctx, subject)
+	if err := c.store.Approve(ctx, subject); err != nil {
+		return err
+	}
+	// Mint a Founder badge during private beta (up to the Mission Zero cap).
+	if c.privateBeta {
+		_, _ = c.store.AssignFounder(ctx, subject, api.MissionZeroCap)
+	}
+	return nil
 }
 
 func (c crewAdmin) Revoke(ctx context.Context, subject string) error {
@@ -129,6 +139,38 @@ func (m *mongoAccess) SetTier(ctx context.Context, subject, tier string) error {
 	}}}
 	_, err := m.coll.UpdateOne(ctx, bson.D{{Key: "_id", Value: subject}}, update, options.UpdateOne().SetUpsert(true))
 	return err
+}
+
+func (m *mongoAccess) AssignFounder(ctx context.Context, subject string, cap int) (int, error) {
+	// Already a founder? Keep the number.
+	var rec api.AccessRecord
+	if err := m.coll.FindOne(ctx, bson.D{{Key: "_id", Value: subject}}).Decode(&rec); err == nil && rec.FounderNumber > 0 {
+		return rec.FounderNumber, nil
+	}
+	// Highest founder number so far.
+	var top api.AccessRecord
+	err := m.coll.FindOne(ctx,
+		bson.D{{Key: "founder_number", Value: bson.D{{Key: "$gt", Value: 0}}}},
+		options.FindOne().SetSort(bson.D{{Key: "founder_number", Value: -1}}),
+	).Decode(&top)
+	max := 0
+	if err == nil {
+		max = top.FounderNumber
+	} else if !errors.Is(err, mongodriver.ErrNoDocuments) {
+		return 0, err
+	}
+	if max >= cap {
+		return 0, nil
+	}
+	next := max + 1
+	if _, err := m.coll.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: subject}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "founder_number", Value: next}}}},
+		options.UpdateOne().SetUpsert(true),
+	); err != nil {
+		return 0, err
+	}
+	return next, nil
 }
 
 func (m *mongoAccess) All(ctx context.Context) ([]api.AccessRecord, error) {
