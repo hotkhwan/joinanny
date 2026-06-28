@@ -535,6 +535,12 @@
           </div>
           <div class="actions" style="margin-top:0.5rem"><button class="primary" id="tier-set">Set tier</button></div>
           <div class="msg" id="tier-msg"></div>
+          <label for="revoke-subject" style="margin-top:0.9rem">Revoke a member's access</label>
+          <div class="cmdrow">
+            <input id="revoke-subject" placeholder="subject (e.g. tg:468848033)" autocomplete="off" />
+            <button class="ghost" id="revoke-set" style="flex:0 0 auto;width:auto;padding:0.4rem 0.9rem">Revoke</button>
+          </div>
+          <div class="msg" id="revoke-msg"></div>
         </div>
         <div class="card" id="status">Loading status…</div>
       </section>
@@ -678,13 +684,22 @@
         $("tier-msg").textContent = r.ok ? `Set ${d.subject} → ${d.tier}` : d.error || "Failed";
         $("tier-msg").style.color = r.ok ? "var(--profit)" : "var(--loss)";
       };
+      if ($("revoke-set")) $("revoke-set").onclick = async () => {
+        const subject = $("revoke-subject").value.trim();
+        if (!subject || !confirm("Revoke access for " + subject + "?")) return;
+        const r = await fetch("/api/admin/revoke", { method: "POST", headers: authHeaders(), body: JSON.stringify({ subject }) });
+        const d = await r.json().catch(() => ({}));
+        $("revoke-msg").textContent = r.ok ? `Revoked ${d.revoked}` : d.error || "Failed";
+        $("revoke-msg").style.color = r.ok ? "var(--profit)" : "var(--loss)";
+        if (r.ok) loadAdminPending();
+      };
 
       function showView(name) {
         // Locked users are confined to Home.
         if (me && !unlocked() && name !== "home" && name !== "login") name = "home";
         ["home", "orders", "history", "community", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
-        if (name === "home") loadHome();
+        if (name === "home") { loadHome(); startHomePolling(); } else { stopHomePolling(); }
         if (name === "orders") { refreshKeyStatus(); loadGoalHistory(); loadLeaderboard(); startPositionsPolling(); } else { stopPositionsPolling(); }
         if (name === "history") { loadRecorder(); loadHistory(); }
         if (name === "community") loadLeaderboard();
@@ -796,7 +811,25 @@
             $("home-mission").innerHTML = `Latest mission <b>#${e.mission_no}</b> · ${escapeHtml(e.symbol)} <span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span> <b class="${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</b>`;
           } else { $("home-mission").textContent = "No missions yet — run a goal to begin."; }
         } catch (_) { $("home-mission").textContent = ""; }
+        loadOpenPnL();
       }
+      // Live "Today's Profit": when there are open positions, show their summed
+      // unrealised PnL (refreshed live); otherwise fall back to realized PnL.
+      async function loadOpenPnL() {
+        try {
+          const d = await (await fetch("/api/positions", { headers: authHeaders() })).json();
+          const ps = d.positions || [];
+          if (!ps.length) return; // keep the realized-PnL display from loadHome
+          const sum = ps.reduce((a, p) => a + (Number(p.pnl) || 0), 0);
+          const pos = sum >= 0, el = $("home-pnl");
+          el.textContent = (pos ? "+" : "") + sum.toFixed(2) + " USDT";
+          el.className = "hnum mono " + (pos ? "pos" : "neg");
+          $("home-pnl-pct").innerHTML = `<span class="${pos ? "up" : "down"}">${pos ? "▲" : "▼"}</span> live · ${ps.length} open position${ps.length > 1 ? "s" : ""}`;
+        } catch (_) {}
+      }
+      let homeTimer = null;
+      function startHomePolling() { stopHomePolling(); homeTimer = setInterval(loadOpenPnL, 8000); }
+      function stopHomePolling() { if (homeTimer) { clearInterval(homeTimer); homeTimer = null; } }
 
       // ---- auth: password ----
       function show(text, ok) { $("msg").textContent = text; $("msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
