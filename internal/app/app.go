@@ -96,7 +96,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	a.logBootstrap("all")
 
-	orderService, statusService, planService, signalStore, trailExchange, cleanup, err := a.newTradingServices(ctx)
+	orderService, statusService, planService, signalStore, trailExchange, trailProvider, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,6 +104,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	signalProcessor := a.newSignalProcessor(orderService, signalStore)
 	a.startMonitor(ctx, trailExchange)
+	a.startPerUserTrailing(ctx, trailProvider, signalStore)
 	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	errCh := make(chan error, 2)
@@ -178,13 +179,14 @@ func (a *App) RunWorker(ctx context.Context) error {
 
 	a.logBootstrap("worker")
 
-	orderService, statusService, planService, signalStore, trailExchange, cleanup, err := a.newTradingServices(ctx)
+	orderService, statusService, planService, signalStore, trailExchange, trailProvider, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	a.startMonitor(ctx, trailExchange)
+	a.startPerUserTrailing(ctx, trailProvider, signalStore)
 	broadcaster := a.startRealtime(ctx, positionSourceOf(trailExchange))
 
 	if a.cfg.Telegram.Mode != config.TelegramModePolling {
@@ -228,6 +230,40 @@ func (a *App) startMonitor(ctx context.Context, trailExchange monitor.Exchange) 
 	go func() {
 		if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			a.logger.Error("trailing-stop monitor stopped", "error", err)
+		}
+	}()
+}
+
+// credUserLister adapts the Mongo credential repo to monitor.UserLister, so the
+// per-user trailer knows which users (subjects) may have positions to manage.
+type credUserLister struct {
+	repo *mongostore.CredentialRepository
+}
+
+func (c credUserLister) TradingUserKeys(ctx context.Context) ([]string, error) {
+	return c.repo.AllUserIDs(ctx)
+}
+
+// startPerUserTrailing runs the multi-tenant trailing-stop monitor: it manages
+// break-even + trailing on every user's OWN positions (their own key), so live
+// Missions get autonomous management. Only started in the worker/poller (not the
+// API), so there is exactly one trailer. Best-effort, same as startMonitor.
+func (a *App) startPerUserTrailing(ctx context.Context, provider monitor.ExchangeProvider, signalStore signals.SignalStore) {
+	if provider == nil {
+		return
+	}
+	policy, ok := a.trailPolicy()
+	if !ok {
+		return // already logged by startMonitor
+	}
+	store, ok := signalStore.(*mongostore.Store)
+	if !ok {
+		return
+	}
+	trailer := monitor.NewMultiTrailer(provider, credUserLister{repo: store.Credentials()}, policy, 0, a.logger)
+	go func() {
+		if err := trailer.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Error("per-user trailing monitor stopped", "error", err)
 		}
 	}()
 }
@@ -288,7 +324,7 @@ func (a *App) RunAPI(ctx context.Context) error {
 
 	a.logBootstrap("api")
 
-	orderService, _, _, signalStore, trailExchange, cleanup, err := a.newTradingServices(ctx)
+	orderService, _, _, signalStore, trailExchange, _, cleanup, err := a.newTradingServices(ctx)
 	if err != nil {
 		return err
 	}
@@ -362,7 +398,7 @@ func (a *App) serverOptions(signalStore signals.SignalStore) []api.Option {
 	return opts
 }
 
-func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.StatusService, *plans.Service, signals.SignalStore, monitor.Exchange, func(), error) {
+func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.StatusService, *plans.Service, signals.SignalStore, monitor.Exchange, monitor.ExchangeProvider, func(), error) {
 	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -371,7 +407,7 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 		Database: a.cfg.MongoDB.Database,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 	cleanup := func() {
 		disconnectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -386,6 +422,7 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 	positionProvider := orders.PositionProvider(orders.EmptyPositionProvider{})
 	var trailExchange monitor.Exchange
 	var executorProvider orders.ExecutorProvider
+	var trailProvider monitor.ExchangeProvider
 	if !a.cfg.App.DryRun {
 		execCfg := binanceexec.ExecutorConfig{
 			APIKey:               a.cfg.Binance.APIKey,
@@ -411,7 +448,9 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 		if a.cfg.Auth.Enabled {
 			if keyring, err := auth.NewKeyring(map[string][]byte{a.cfg.Auth.EncryptionKeyID: a.cfg.Auth.EncryptionKey}, a.cfg.Auth.EncryptionKeyID); err == nil {
 				if credentialService, err := auth.NewCredentialService(keyring, store.Credentials()); err == nil {
-					executorProvider = binanceexec.NewExecutorProvider(execCfg, credentialService, a.logger)
+					provider := binanceexec.NewExecutorProvider(execCfg, credentialService, a.logger)
+					executorProvider = provider
+					trailProvider = provider // same provider, viewed as a per-user trailing source
 				}
 			}
 		}
@@ -430,7 +469,7 @@ func (a *App) newTradingServices(ctx context.Context) (*orders.Service, *orders.
 	}, a.logger)
 	statusService := orders.NewStatusService(positionProvider)
 	planService := plans.NewService(store)
-	return orderService, statusService, planService, store, trailExchange, cleanup, nil
+	return orderService, statusService, planService, store, trailExchange, trailProvider, cleanup, nil
 }
 
 // buildEnricher assembles the context Aggregator that feeds the AI prompt. In

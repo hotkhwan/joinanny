@@ -59,6 +59,20 @@ func (r *CredentialRepository) FindActive(ctx context.Context, userID string) (a
 	return cred, nil
 }
 
+// AllUserIDs returns the distinct subjects that have any stored credential, so
+// the per-user trailing monitor knows whose positions to manage.
+func (r *CredentialRepository) AllUserIDs(ctx context.Context) ([]string, error) {
+	res := r.coll.Distinct(ctx, "user_id", bson.M{})
+	if err := res.Err(); err != nil {
+		return nil, fmt.Errorf("distinct credential users: %w", err)
+	}
+	var ids []string
+	if err := res.Decode(&ids); err != nil {
+		return nil, fmt.Errorf("decode credential users: %w", err)
+	}
+	return ids, nil
+}
+
 // Remove deletes one of a user's credential profiles.
 func (r *CredentialRepository) Remove(ctx context.Context, userID, profile string) error {
 	if _, err := r.coll.DeleteOne(ctx, profileFilter(userID, profile)); err != nil {

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"bottrade/internal/auth"
+	"bottrade/internal/monitor"
 	"bottrade/internal/orders"
 )
 
@@ -71,4 +72,16 @@ func (p *ExecutorProvider) ExecutorFor(ctx context.Context, userKey string) (ord
 	executor := NewExecutor(cfg, p.logger)
 	p.cache[cacheKey] = executor
 	return executor, true, nil
+}
+
+// ExchangeFor returns the user's executor as a monitor.Exchange (Positions +
+// CurrentStop + MoveStopLoss), so the per-user trailing monitor can manage each
+// user's own stops. It inherits the same testnet/real-trading gates as trading.
+func (p *ExecutorProvider) ExchangeFor(ctx context.Context, userKey string) (monitor.Exchange, bool, error) {
+	executor, ok, err := p.ExecutorFor(ctx, userKey)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	ex, ok := executor.(monitor.Exchange)
+	return ex, ok, nil
 }
