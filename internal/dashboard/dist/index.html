@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ANNY · AI Trading Companion</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050816'/%3E%3Cpath d='M15 22 L19 8 L32 19 Z' fill='%23FF2D82'/%3E%3Cpath d='M49 22 L45 8 L32 19 Z' fill='%23FF2D82'/%3E%3Crect x='13' y='17' width='38' height='32' rx='13' fill='%230b1220' stroke='%2300F5FF' stroke-width='2'/%3E%3Cpath d='M24 29 l5 4 -5 4' stroke='%2300F5FF' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M40 29 l-5 4 5 4' stroke='%2300F5FF' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,7 +17,9 @@
         --card-border: rgba(0, 245, 255, 0.12);
         --primary: #00F5FF;
         --accent: #00F5FF;
+        --pink: #FF2D82;
         --accent-grad: linear-gradient(135deg, #00F0FF, #0066FF);
+        --brand-grad: linear-gradient(100deg, #00F5FF, #FF2D82);
         --profit: #00FF99;
         --loss: #FF4D6D;
         --amber: #F5A524;
@@ -64,13 +67,13 @@
       /* ---- app bar ---- */
       .appbar { display: flex; align-items: center; gap: 0.7rem; padding: 1.2rem 0 0.4rem; }
       .brand { display: flex; align-items: center; gap: 0.6rem; }
-      .mascot { width: 2.6rem; height: 2.6rem; flex: 0 0 auto; animation: float 4.5s ease-in-out infinite; filter: drop-shadow(0 0 10px rgba(0, 245, 255, 0.45)); }
+      .mascot { width: 2.7rem; height: 2.7rem; flex: 0 0 auto; animation: float 4.5s ease-in-out infinite; filter: drop-shadow(0 0 8px rgba(0, 245, 255, 0.45)) drop-shadow(0 0 10px rgba(255, 45, 130, 0.35)); }
       @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
       @keyframes blink { 0%, 92%, 100% { opacity: 1; } 95% { opacity: 0.25; } }
       .mascot .eye { animation: blink 5s infinite; }
-      .brand .word { font-family: var(--font-head); font-weight: 700; font-size: 1.25rem; line-height: 1.05;
-        background: linear-gradient(90deg, #fff, #00F5FF); -webkit-background-clip: text; background-clip: text; color: transparent;
-        text-shadow: 0 0 16px rgba(0, 245, 255, 0.35); }
+      .brand .word { font-family: var(--font-head); font-weight: 700; font-size: 1.35rem; line-height: 1.05; letter-spacing: 0.5px;
+        background: var(--brand-grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+        text-shadow: 0 0 18px rgba(255, 45, 130, 0.3); }
       .brand .sub { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.4px; margin-top: 1px; }
       .appbar .spacer { flex: 1; }
       .greeting { font-family: var(--font-head); font-size: 0.92rem; color: var(--text); margin: 0.1rem 0 0.2rem; }
@@ -226,14 +229,16 @@
             <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
           </linearGradient>
         </defs>
-        <rect x="6" y="16" width="6" height="20" rx="3" fill="url(#novaG2)"/>
-        <rect x="52" y="16" width="6" height="20" rx="3" fill="url(#novaG2)"/>
-        <rect x="13" y="12" width="38" height="34" rx="12" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2"/>
-        <rect x="29" y="4" width="6" height="8" rx="3" fill="url(#novaG2)"/>
-        <circle cx="32" cy="3" r="2.5" fill="#00F5FF"/>
-        <circle class="eye" cx="25" cy="29" r="4" fill="#00F5FF"/>
-        <circle class="eye" cx="39" cy="29" r="4" fill="#00F5FF"/>
-        <path d="M24 39 Q32 44 40 39" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
+        <path d="M13 21 L17 5 L31 18 Z" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M51 21 L47 5 L33 18 Z" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M17.5 17 L19 9 L26 16 Z" fill="#FF2D82"/>
+        <path d="M46.5 17 L45 9 L38 16 Z" fill="#FF2D82"/>
+        <rect x="5" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
+        <rect x="53" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
+        <rect x="11" y="16" width="42" height="34" rx="14" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2"/>
+        <path class="eye" d="M23 28 l5 4 -5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="eye" d="M41 28 l-5 4 5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M27 42 Q32 46 37 42" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
       </svg>
     </template>
 
@@ -241,22 +246,24 @@
       <div class="appbar">
         <div class="brand">
           <svg class="mascot" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="6" y="16" width="6" height="20" rx="3" fill="url(#novaG)"/>
-            <rect x="52" y="16" width="6" height="20" rx="3" fill="url(#novaG)"/>
-            <rect x="13" y="12" width="38" height="34" rx="12" fill="#0b1220" stroke="url(#novaG)" stroke-width="2"/>
-            <rect x="29" y="4" width="6" height="8" rx="3" fill="url(#novaG)"/>
-            <circle cx="32" cy="3" r="2.5" fill="#00F5FF"/>
-            <circle class="eye" cx="25" cy="29" r="4" fill="#00F5FF"/>
-            <circle class="eye" cx="39" cy="29" r="4" fill="#00F5FF"/>
-            <path d="M24 39 Q32 44 40 39" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
             <defs>
               <linearGradient id="novaG" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
               </linearGradient>
             </defs>
+            <path d="M13 21 L17 5 L31 18 Z" fill="#0b1220" stroke="url(#novaG)" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M51 21 L47 5 L33 18 Z" fill="#0b1220" stroke="url(#novaG)" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M17.5 17 L19 9 L26 16 Z" fill="#FF2D82"/>
+            <path d="M46.5 17 L45 9 L38 16 Z" fill="#FF2D82"/>
+            <rect x="5" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
+            <rect x="53" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
+            <rect x="11" y="16" width="42" height="34" rx="14" fill="#0b1220" stroke="url(#novaG)" stroke-width="2"/>
+            <path class="eye" d="M23 28 l5 4 -5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <path class="eye" d="M41 28 l-5 4 5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M27 42 Q32 46 37 42" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
           </svg>
           <div>
-            <div class="word">🤖 ANNY</div>
+            <div class="word">ANNY</div>
             <div class="sub">AI Trading Companion</div>
           </div>
         </div>
@@ -323,43 +330,6 @@
       <!-- ORDERS (Trade) -->
       <section id="view-orders" class="hidden">
         <div class="card">
-          <strong>Open position</strong>
-          <p style="margin:0.3rem 0 0.6rem">Pick a side, size and levels — you'll Confirm before anything places.</p>
-          <div class="ticket">
-            <div class="side">
-              <button type="button" class="long on" id="side-long">Long / Buy</button>
-              <button type="button" class="short" id="side-short">Short / Sell</button>
-            </div>
-            <div>
-              <label for="t-sym">Symbol</label>
-              <div class="cmdrow">
-                <input id="t-sym" placeholder="BTC" autocomplete="off" />
-                <button class="ghost" id="t-last" type="button" style="flex:0 0 auto;width:auto;white-space:nowrap">Last <span id="t-px" class="mono">—</span></button>
-              </div>
-            </div>
-            <div>
-              <label>Leverage <span id="t-levval" class="mono" style="color:var(--primary);font-weight:700">3x</span></label>
-              <div class="lev"><input type="range" id="t-lev" min="1" max="20" value="3" /></div>
-            </div>
-            <div class="grid2">
-              <div><label for="t-size">Size (USDT)</label><input id="t-size" inputmode="decimal" placeholder="100" autocomplete="off" /></div>
-              <div><label for="t-entry">Entry price</label><input id="t-entry" inputmode="decimal" placeholder="tap Last" autocomplete="off" /></div>
-            </div>
-            <div class="grid2">
-              <div><label for="t-sl">Stop loss</label><input id="t-sl" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
-              <div><label for="t-tp">Take profit</label><input id="t-tp" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
-            </div>
-            <div class="chips">
-              <button class="chip" type="button" data-risk="1">SL/TP 1% / 2%</button>
-              <button class="chip" type="button" data-risk="2">2% / 4%</button>
-              <button class="chip" type="button" data-risk="5">5% / 10%</button>
-            </div>
-            <button class="primary" id="t-review" type="button">Review order</button>
-            <div class="msg" id="t-msg"></div>
-          </div>
-        </div>
-
-        <div class="card">
           <strong>Goal — paper test on real data</strong>
           <p style="margin:0.3rem 0 0.6rem">Set a profit goal; it runs your strategy over real Binance candles and shows the real stats. No orders are placed.</p>
           <div class="ticket">
@@ -369,7 +339,7 @@
             </div>
             <div class="grid2">
               <div><label for="g-risk">Max risk (% of capital)</label><input id="g-risk" inputmode="numeric" placeholder="30" value="30" autocomplete="off" /></div>
-              <div><label for="g-symbol">Symbol</label><input id="g-symbol" placeholder="BTC" value="BTC" autocomplete="off" /></div>
+              <div><label for="g-symbol">Symbol <span style="color:var(--muted);font-weight:400">· pick a favourite</span></label><input id="g-symbol" list="g-favlist" placeholder="BTC — or ★ a coin below" value="BTC" autocomplete="off" /><datalist id="g-favlist"></datalist></div>
             </div>
             <div class="grid2">
               <div><label for="g-strategy">Strategy</label><select id="g-strategy"><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option></select></div>
@@ -387,17 +357,16 @@
         </div>
 
         <div class="card">
-          <strong>Commands</strong>
-          <p style="margin:0.3rem 0 0.6rem">Market data, goals, backtest, close — trades ask to Confirm first.</p>
+          <strong>💬 Ask ANNY</strong>
+          <p style="margin:0.3rem 0 0.6rem">Scan a coin's market data, then ★ it above to drop it into your Goal.</p>
           <div class="chips" style="margin-bottom:0.6rem">
             <button class="chip" data-cmd="market BTC">market BTC</button>
-            <button class="chip" data-cmd="goal profit 10 risk 50">goal</button>
+            <button class="chip" data-cmd="market SOL">market SOL</button>
             <button class="chip" data-cmd="backtest BTC">backtest BTC</button>
-            <button class="chip" data-cmd="close all">close all</button>
             <button class="chip" data-cmd="help">help</button>
           </div>
           <div class="cmdrow">
-            <input id="cmd" placeholder="long BTC 3x entry 67500 sl 65000 tp 72000 size 100usdt" autocomplete="off" />
+            <input id="cmd" placeholder="Ask: market SOL · backtest ETH · help" autocomplete="off" />
             <button class="primary" id="cmd-run" style="flex:0 0 auto;width:5rem">Run</button>
           </div>
           <pre id="cmd-out" class="output"></pre>
@@ -454,9 +423,9 @@
             <input id="profName" placeholder="name (e.g. testnet)" autocomplete="off" />
             <select id="profNet" style="flex:0 0 auto;width:7rem"><option value="true">testnet</option><option value="false">live</option></select>
           </div>
-          <input id="apiKey" placeholder="API key" autocomplete="off" />
-          <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" />
-          <div class="actions"><button class="primary" id="saveKey">Save profile</button></div>
+          <input id="apiKey" placeholder="API key" autocomplete="off" style="margin-top:0.6rem" />
+          <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" style="margin-top:0.6rem" />
+          <div class="actions" style="margin-top:0.8rem"><button class="primary" id="saveKey">Save profile</button></div>
           <div class="msg" id="keyMsg"></div>
         </div>
         <div class="card" id="status">Loading status…</div>
@@ -666,8 +635,18 @@
           box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => removeProfile(b.dataset.del)));
         } catch (e) {}
       }
-      async function setActive(profile) { await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) }); refreshKeyStatus(); }
-      async function removeProfile(profile) { await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() }); refreshKeyStatus(); }
+      async function setActive(profile) {
+        const r = await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); keyMsg(d.error || "Could not switch profile", false); }
+        refreshKeyStatus();
+      }
+      async function removeProfile(profile) {
+        if (!confirm(`Remove profile “${profile}”?`)) return;
+        const r = await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() });
+        if (r.ok) keyMsg(`Removed “${profile}”.`, true);
+        else { const d = await r.json().catch(() => ({})); keyMsg(d.error || `Could not remove (${r.status})`, false); }
+        refreshKeyStatus();
+      }
       $("saveKey").onclick = async () => {
         const profile = $("profName").value.trim() || "default";
         const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(),
@@ -730,7 +709,7 @@
       }
       function startPricePolling() {
         if (priceTimer) return;
-        const tick = async () => { await loadPrices([...getFavs(), $("t-sym").value]); renderFavs(); updateTicketPrice(); };
+        const tick = async () => { await loadPrices(getFavs()); renderFavs(); };
         tick();
         priceTimer = setInterval(tick, 10000);
       }
@@ -754,10 +733,19 @@
           const px = t ? `<div>${formatPrice(t.last_price)}</div><div class="chg ${cls}">${chgTxt}</div>` : "<div>…</div>";
           return `<div class="fav"><span class="sym" data-coin="${s}">${s}</span><span class="px">${px}</span><button class="iconbtn" data-up="${i}" title="Move up">↑</button><button class="iconbtn" data-down="${i}" title="Move down">↓</button><button class="iconbtn" data-rm="${s}" title="Remove">✕</button></div>`;
         }).join("");
-        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => loadIntoTicket(b.dataset.coin)));
+        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => loadIntoGoal(b.dataset.coin)));
         box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.up, -1)));
         box.querySelectorAll("[data-down]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.down, 1)));
         box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => removeFav(b.dataset.rm)));
+        // Feed favourites into the Goal symbol dropdown.
+        const dl = $("g-favlist");
+        if (dl) dl.innerHTML = f.map((s) => `<option value="${escapeHtml(s)}"></option>`).join("");
+      }
+      // Tapping a favourite loads it into the Goal form's symbol.
+      function loadIntoGoal(coin) {
+        $("g-symbol").value = String(coin).replace(/USDT$/, "");
+        navigate("orders");
+        $("g-run").scrollIntoView({ behavior: "smooth", block: "center" });
       }
       let coinTimer = null;
       $("coinSearch").addEventListener("input", (e) => {
@@ -769,60 +757,6 @@
           box.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => addFav(b.dataset.add)));
         }, 250);
       });
-
-      // ---- order ticket ----
-      let ticketSide = "long";
-      function ticketMsg(t, ok) { $("t-msg").textContent = t || ""; $("t-msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
-      function setSide(s) { ticketSide = s; $("side-long").classList.toggle("on", s === "long"); $("side-short").classList.toggle("on", s === "short"); }
-      function updateTicketPrice() {
-        const t = priceCache[normSym($("t-sym").value)];
-        if (!t) { $("t-px").textContent = "—"; return; }
-        const chg = Number(t.price_change_pct);
-        $("t-px").textContent = formatPrice(t.last_price) + (isFinite(chg) ? ` (${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%)` : "");
-      }
-      async function loadIntoTicket(coin) {
-        $("t-sym").value = String(coin).replace(/USDT$/, "");
-        navigate("orders");
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        await loadPrices([coin]); updateTicketPrice();
-        const t = priceCache[normSym(coin)];
-        if (t && !$("t-entry").value) $("t-entry").value = trimNum(t.last_price);
-      }
-      $("side-long").onclick = () => setSide("long");
-      $("side-short").onclick = () => setSide("short");
-      $("t-lev").addEventListener("input", (e) => ($("t-levval").textContent = e.target.value + "x"));
-      let tSymTimer = null;
-      $("t-sym").addEventListener("input", () => {
-        clearTimeout(tSymTimer);
-        tSymTimer = setTimeout(async () => { if (normSym($("t-sym").value)) { await loadPrices([$("t-sym").value]); updateTicketPrice(); } }, 350);
-      });
-      $("t-last").onclick = async () => {
-        const sym = normSym($("t-sym").value); if (!sym) { ticketMsg("Enter a symbol first."); return; }
-        await loadPrices([sym]); const t = priceCache[sym];
-        if (t) { $("t-entry").value = trimNum(t.last_price); ticketMsg(""); } else ticketMsg("No price for that symbol.");
-        updateTicketPrice();
-      };
-      document.querySelectorAll("[data-risk]").forEach((b) => (b.onclick = async () => {
-        let entry = Number($("t-entry").value);
-        if (!entry) { const sym = normSym($("t-sym").value); await loadPrices([sym]); const t = priceCache[sym]; if (t) { entry = Number(t.last_price); $("t-entry").value = trimNum(entry); } }
-        if (!entry) { ticketMsg("Set an entry price (or tap Last) first."); return; }
-        const slPct = Number(b.dataset.risk) / 100, tpPct = slPct * 2;
-        if (ticketSide === "long") { $("t-sl").value = trimNum(entry * (1 - slPct)); $("t-tp").value = trimNum(entry * (1 + tpPct)); }
-        else { $("t-sl").value = trimNum(entry * (1 + slPct)); $("t-tp").value = trimNum(entry * (1 - tpPct)); }
-        ticketMsg("");
-      }));
-      $("t-review").onclick = async () => {
-        const sym = $("t-sym").value.trim(); if (!sym) return ticketMsg("Enter a symbol.");
-        const size = $("t-size").value.trim(); if (!size) return ticketMsg("Enter a size in USDT.");
-        let entry = $("t-entry").value.trim();
-        if (!entry) { await loadPrices([sym]); const t = priceCache[normSym(sym)]; if (t) entry = trimNum(t.last_price); }
-        if (!entry) return ticketMsg("Enter an entry price (or tap Last).");
-        const sl = $("t-sl").value.trim(), tp = $("t-tp").value.trim();
-        if (!sl || !tp) return ticketMsg("Enter stop loss and take profit (or tap a % preset).");
-        const cmd = `${ticketSide} ${sym} ${$("t-lev").value}x entry ${entry} sl ${sl} tp ${tp} size ${size}usdt`;
-        ticketMsg(""); cmdInput.value = cmd; runCommand(cmd);
-        $("cmd-out").scrollIntoView({ behavior: "smooth", block: "nearest" });
-      };
 
       // ---- goal (paper backtest on real data) ----
       function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
