@@ -331,7 +331,7 @@
           </svg>
           <div>
             <div class="word">ANNY <span class="ver" id="brand-ver"></span></div>
-            <div class="sub">AI Trading Companion</div>
+            <div class="sub">AI Trading Companion <span id="brand-badges"></span></div>
           </div>
         </div>
         <span class="spacer"></span>
@@ -342,7 +342,6 @@
       <!-- HOME -->
       <section id="view-home" class="hidden">
         <p class="greeting" id="home-greeting">Good evening, Captain 👋</p>
-        <div id="home-badges" style="margin:-0.1rem 0 0.3rem"></div>
         <div class="hero">
           <div class="hlabel">Today's Profit</div>
           <div class="hnum mono pos" id="home-pnl">—</div>
@@ -730,10 +729,10 @@
         box.textContent = me && me.version ? "v" + me.version : "";
       }
       function renderBadges() {
-        const box = $("home-badges"); if (!box || !me) return;
+        const box = $("brand-badges"); if (!box || !me) return;
         const b = [];
-        if (me.admin) b.push('<span class="awb" style="border-color:#FFD166;color:#FFD166">👑 ' + (me.root_admin ? "Admin" : "Admin") + "</span>");
-        if (me.founder) b.push('<span class="awb" style="border-color:#B197FC;color:#B197FC">🟣 Founder</span>');
+        if (me.admin) b.push('<span class="awb" style="border-color:#FFD166;color:#FFD166">👑 Admin</span>');
+        if (me.founder) b.push('<span class="awb" style="border-color:#B197FC;color:#B197FC">🟣 Founder' + (me.founder_number ? " #" + me.founder_number : "") + "</span>");
         box.innerHTML = b.join(" ");
       }
       function renderTier() {

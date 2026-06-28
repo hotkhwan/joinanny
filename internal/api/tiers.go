@@ -96,10 +96,14 @@ func (s *Server) tierOfSubject(ctx context.Context, subject string) string {
 				return rec.Tier
 			}
 			// Pioneer perk: during private beta (PRIVATE_BETA=true), every approved
-			// crew member runs as Commander (unlimited). After the public launch
-			// they fall back to their stored tier.
+			// crew member runs as Commander (unlimited).
 			if s.cfg.App.PrivateBeta && rec.Status == accessApproved {
 				return TierCommander
+			}
+			// After the public launch, a founder keeps Captain for life; everyone
+			// else falls back to their stored tier (Crew by default).
+			if rec.FounderNumber > 0 {
+				return TierCaptain
 			}
 			if rec.Tier != "" {
 				return rec.Tier

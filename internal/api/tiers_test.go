@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +100,40 @@ func TestAdminEndpointsRejectNonAdmin(t *testing.T) {
 		if code := do(c.method, c.path); code != http.StatusForbidden {
 			t.Errorf("%s %s as non-admin = %d, want 403", c.method, c.path, code)
 		}
+	}
+}
+
+func TestFounderAssignmentAndCap(t *testing.T) {
+	store := newMemAccess()
+	// First MissionZeroCap subjects get numbers 1..cap; the next gets 0.
+	for i := 1; i <= MissionZeroCap; i++ {
+		n, _ := store.AssignFounder(context.Background(), "tg:"+strconv.Itoa(i), MissionZeroCap)
+		if n != i {
+			t.Fatalf("founder %d got number %d", i, n)
+		}
+	}
+	if n, _ := store.AssignFounder(context.Background(), "tg:999", MissionZeroCap); n != 0 {
+		t.Fatalf("over-cap founder = %d, want 0", n)
+	}
+	// Idempotent: re-assigning an existing founder keeps the same number.
+	if n, _ := store.AssignFounder(context.Background(), "tg:5", MissionZeroCap); n != 5 {
+		t.Fatalf("re-assign founder 5 = %d", n)
+	}
+}
+
+func TestFounderKeepsCaptainAfterLaunch(t *testing.T) {
+	tk, _ := auth.NewTokenizer(bytes.Repeat([]byte("k"), auth.MinSecretSize), 0)
+	user, _ := tk.Issue("tg:5", "founder", "user")
+	// Public launch (PRIVATE_BETA=false): a founder keeps Captain; a plain
+	// approved member is Crew.
+	srv := NewServer(testConfigWith(t, map[string]string{"PRIVATE_BETA": "false"}), nil, testLogger(), WithTokenizer(tk))
+	srv.access.Approve(context.Background(), "tg:5")
+	if me := getJSON(t, srv, "/api/me", user); me["tier"] != "free" {
+		t.Fatalf("approved non-founder post-launch = %v, want free", me["tier"])
+	}
+	srv.access.AssignFounder(context.Background(), "tg:5", MissionZeroCap)
+	if me := getJSON(t, srv, "/api/me", user); me["tier"] != "captain" || me["founder_number"].(float64) != 1 {
+		t.Fatalf("founder post-launch = %v, want captain #1", me)
 	}
 }
 
