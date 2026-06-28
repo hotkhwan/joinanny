@@ -357,7 +357,8 @@
               <div><label for="g-interval">Timeframe</label><select id="g-interval"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
             </div>
             <label class="gai"><input type="checkbox" id="g-ai" /> Let AI pick the side (per run)</label>
-            <button class="primary" id="g-run" type="button">Run goal</button>
+            <button class="primary" id="g-run" type="button">Run goal (paper)</button>
+            <button class="ghost" id="g-live" type="button" style="border:1px solid var(--card-border)">🚀 Run live Mission (testnet) — places a real order on your active key, after Confirm</button>
             <div class="msg" id="g-msg"></div>
           </div>
           <pre id="g-out" class="output hidden"></pre>
@@ -939,6 +940,24 @@
         finally { $("g-run").disabled = false; }
       }
       $("g-run").onclick = runGoal;
+      async function runLiveMission() {
+        if (!confirm("Run a LIVE testnet Mission? ANNY will propose a real order on your active key — you still press Confirm before it places.")) return;
+        goalMsg("Preparing live Mission…", true);
+        $("g-live").disabled = true;
+        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, risk: parseInt($("g-risk").value, 10) || 30, strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked };
+        try {
+          const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
+          goalMsg("");
+          cmdOut.textContent = d.output || ""; cmdSpark.innerHTML = "";
+          if (d.confirm_id) { pendingConfirmId = d.confirm_id; cmdConfirm.classList.remove("hidden"); }
+          else cmdConfirm.classList.add("hidden");
+          $("cmd-out").scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch (e) { goalMsg("Network error"); }
+        finally { $("g-live").disabled = false; }
+      }
+      $("g-live").onclick = runLiveMission;
       async function loadGoalHistory() {
         try {
           const d = await (await fetch("/api/goal/history", { headers: authHeaders() })).json();

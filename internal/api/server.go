@@ -210,6 +210,7 @@ func (s *Server) routes() {
 	s.app.Post("/api/confirm", s.requireAuth, s.handleConfirm)
 	s.app.Get("/api/symbols", s.requireAuth, s.handleSymbols)
 	s.app.Get("/api/prices", s.requireAuth, s.handlePrices)
+	s.app.Post("/api/mission/prepare", s.requireAuth, s.handleMissionPrepare)
 	s.app.Post("/api/goal/run", s.requireAuth, s.handleGoalRun)
 	s.app.Get("/api/goal/history", s.requireAuth, s.handleGoalHistory)
 	s.app.Get("/api/recorder", s.requireAuth, s.handleRecorder)
