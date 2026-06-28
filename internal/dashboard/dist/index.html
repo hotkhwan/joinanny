@@ -176,6 +176,27 @@
       .stat .k { font-size: 0.7rem; color: var(--muted); }
       .stat .v { font-family: var(--font-mono); font-weight: 700; font-size: 1.05rem; margin-top: 0.15rem; }
       .verdict { margin-top: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 0.6rem; background: rgba(0, 245, 255, 0.08); border: 1px solid var(--card-border); font-weight: 600; text-align: center; font-family: var(--font-head); }
+      /* Binance-style result card */
+      .bcard { margin-top: 0.85rem; padding: 1rem 1.05rem 1.1rem; border: 1px solid var(--card-border); border-radius: 1rem; background: linear-gradient(180deg, rgba(11, 18, 32, 0.65), rgba(5, 8, 22, 0.55)); }
+      .bcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.6rem; }
+      .bcard-sym { font-family: var(--font-head); font-weight: 700; font-size: 1.32rem; letter-spacing: 0.3px; }
+      .bcard-tags { display: flex; gap: 0.45rem; margin-top: 0.3rem; flex-wrap: wrap; align-items: center; }
+      .bcard-tag { font-size: 0.72rem; color: var(--muted); }
+      .bcard-tag.long { color: var(--profit); } .bcard-tag.short { color: var(--loss); }
+      .bcard-tag.ai { color: var(--primary); }
+      .bcard-net { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.6px; color: #E9B500; background: rgba(240, 185, 11, 0.12); border: 1px solid rgba(240, 185, 11, 0.4); border-radius: 0.4rem; padding: 0.15rem 0.4rem; flex: 0 0 auto; }
+      .bcard-mid { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.6rem; margin: 0.85rem 0 0.1rem; }
+      .bcard-lbl { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.1rem; }
+      .bcard-num { font-size: 2.1rem; font-weight: 700; line-height: 1.05; }
+      .bcard-num.up { color: var(--profit); } .bcard-num.down { color: var(--loss); }
+      .bcard-roi { font-size: 0.82rem; margin-top: 0.15rem; }
+      .bcard-roi.up { color: var(--profit); } .bcard-roi.down { color: var(--loss); }
+      .bcard-spark { flex: 0 0 auto; width: 48%; max-width: 14rem; height: 4.4rem; align-self: flex-end; }
+      .bcard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem 0.6rem; margin-top: 1rem; }
+      .bcard-cell .ck { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.18rem; }
+      .bcard-cell .cv { font-family: var(--font-mono); font-weight: 600; font-size: 0.98rem; }
+      .bcard-cell .cv.up { color: var(--profit); } .bcard-cell .cv.down { color: var(--loss); }
+      .bcard-foot { margin-top: 0.95rem; padding-top: 0.7rem; border-top: 1px solid var(--card-border); font-size: 0.78rem; color: var(--muted); }
       .trade { display: flex; gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12); font-size: 0.82rem; }
       .trade:last-child { border-bottom: 0; }
       .trade .tside { font-weight: 700; text-transform: uppercase; font-family: var(--font-head); }
@@ -382,9 +403,25 @@
             <div id="g-keyhint" class="reco hidden" style="margin-top:0.5rem"></div>
             <div class="msg" id="g-msg"></div>
           </div>
-          <pre id="g-out" class="output hidden"></pre>
-          <div id="g-spark"></div>
-          <div id="g-stats" class="statgrid hidden"></div>
+          <div id="g-card" class="bcard hidden">
+            <div class="bcard-top">
+              <div>
+                <div class="bcard-sym" id="bc-sym">—</div>
+                <div class="bcard-tags" id="bc-tags"></div>
+              </div>
+              <span class="bcard-net">PAPER</span>
+            </div>
+            <div class="bcard-mid">
+              <div>
+                <div class="bcard-lbl">PnL (USDT)</div>
+                <div class="bcard-num mono" id="bc-pnl">+0.00</div>
+                <div class="bcard-roi mono" id="bc-roi"></div>
+              </div>
+              <div class="bcard-spark" id="bc-spark"></div>
+            </div>
+            <div class="bcard-grid" id="bc-stats"></div>
+            <div class="bcard-foot" id="bc-verdict"></div>
+          </div>
           <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:var(--muted);font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
           <div id="g-history" style="margin-top:0.9rem"></div>
         </div>
@@ -982,19 +1019,42 @@
       function verdictText(v) {
         return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: max drawdown", max_trades: "⏹ Stopped: max trades", continue: "Ran out of history before a stop rule" })[v] || v || "";
       }
+      // bcardSpark draws a Binance-style area sparkline (line + soft fill), green
+      // when the run ends in profit, red otherwise.
+      function bcardSpark(vals) {
+        if (!vals.length) return "";
+        const w = 260, h = 70, pad = 4, min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
+        const y = (v) => h - pad - ((v - min) / range) * (h - 2 * pad);
+        const x = (i) => pad + (i / Math.max(1, vals.length - 1)) * (w - 2 * pad);
+        const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+        const green = vals[vals.length - 1] >= 0;
+        const stroke = green ? "#2EBD85" : "#F6465D", fill = green ? "rgba(46,189,133,0.16)" : "rgba(246,70,93,0.16)";
+        const area = `${x(0).toFixed(1)},${h - pad} ${pts} ${x(vals.length - 1).toFixed(1)},${h - pad}`;
+        return `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polygon points="${area}" fill="${fill}"/><polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+      }
       function renderGoalResult(d) {
         const st = d.stats || {};
-        $("g-out").textContent = d.output || ""; $("g-out").classList.remove("hidden");
-        $("g-spark").innerHTML = (d.curve && d.curve.length) ? sparkline(d.curve.map(Number)) : "";
-        const pnl = Number(st.realized_pnl || 0);
+        const pnl = Number(st.realized_pnl || 0), up = pnl >= 0;
+        const cap = Number(st.capital || 100) || 100;
+        const roi = (pnl / cap) * 100;
+        $("bc-sym").textContent = st.symbol || normSym($("g-symbol").value) || "—";
+        const tags = [`<span class="bcard-tag">${escapeHtml(st.strategy || "")}</span>`, `<span class="bcard-tag">${escapeHtml(st.interval || "")}</span>`];
+        if (st.used_ai) tags.push('<span class="bcard-tag ai">· AI</span>');
+        $("bc-tags").innerHTML = tags.join(" ");
+        $("bc-pnl").textContent = (up ? "+" : "") + (Math.round(pnl * 100) / 100); $("bc-pnl").className = "bcard-num mono " + (up ? "up" : "down");
+        $("bc-roi").textContent = (up ? "+" : "") + (Math.round(roi * 100) / 100) + "% ROI"; $("bc-roi").className = "bcard-roi mono " + (up ? "up" : "down");
+        $("bc-spark").innerHTML = (d.curve && d.curve.length) ? bcardSpark(d.curve.map(Number)) : "";
         const cells = [
-          ["Trades", st.trades || 0], ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%"],
-          ["W / L", (st.wins || 0) + " / " + (st.losses || 0)], ["PnL", fmtPnl(pnl) + " USDT"],
-          ["Target", (st.profit_target || "0") + " USDT"], ["Risk", (st.risk_pct || 0) + "%"],
+          ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%", ""],
+          ["Trades", String(st.trades || 0), ""],
+          ["W / L", (st.wins || 0) + " / " + (st.losses || 0), ""],
+          ["Capital", cap + " USDT", ""],
+          ["Target", (st.profit_target || "0") + " USDT", ""],
+          ["Risk", (st.risk_pct || 0) + "%", ""],
         ];
-        $("g-stats").innerHTML = cells.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v ${k === "PnL" ? (pnl >= 0 ? "up" : "down") : ""}">${escapeHtml(String(v))}</div></div>`).join("")
-          + `<div class="verdict" style="grid-column:1/-1">${escapeHtml(verdictText(st.verdict))}</div>`;
-        $("g-stats").classList.remove("hidden");
+        $("bc-stats").innerHTML = cells.map(([k, v, cls]) => `<div class="bcard-cell"><div class="ck">${k}</div><div class="cv ${cls}">${escapeHtml(v)}</div></div>`).join("");
+        $("bc-verdict").textContent = verdictText(st.verdict);
+        $("g-card").classList.remove("hidden");
         const trades = d.trades || [];
         $("g-trades").innerHTML = trades.length
           ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:var(--muted)">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
