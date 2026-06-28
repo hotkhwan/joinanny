@@ -40,13 +40,13 @@ test("login → goal paper run shows real stats", async ({ page }) => {
   await page.selectOption("#g-interval", "1h");
   await page.click("#g-run");
 
-  const stats = page.locator("#g-stats");
-  await expect(stats).toBeVisible({ timeout: 20_000 });
+  const card = page.locator("#g-card");
+  await expect(card).toBeVisible({ timeout: 20_000 });
   // Real, deterministic outcome on the stub uptrend: target reached at 100% WR.
-  await expect(stats).toContainText("Target reached");
-  await expect(stats).toContainText("100%");
+  await expect(card).toContainText("Target reached");
+  await expect(card).toContainText("100%");
   // Equity curve drawn, trades listed, and the run accumulates into history.
-  await expect(page.locator("#g-spark svg")).toBeVisible();
+  await expect(page.locator("#bc-spark svg")).toBeVisible();
   await expect(page.locator("#g-history")).toContainText("BTCUSDT");
 });
 
@@ -88,7 +88,7 @@ test("flight recorder logs the paper run, labeled and hashed", async ({ page }) 
   await page.fill("#g-profit", "5");
   await page.fill("#g-symbol", "BTC");
   await page.click("#g-run");
-  await expect(page.locator("#g-stats")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("#g-card")).toBeVisible({ timeout: 20_000 });
 
   await page.click('#nav button[data-view="history"]');
   await expect(page.locator("#view-history")).toBeVisible();
@@ -105,7 +105,7 @@ test("community leaderboard aggregates the run; mission replay opens", async ({ 
   await page.fill("#g-profit", "5");
   await page.fill("#g-symbol", "BTC");
   await page.click("#g-run");
-  await expect(page.locator("#g-stats")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("#g-card")).toBeVisible({ timeout: 20_000 });
 
   // Community tab aggregates the paper run by strategy + coin.
   await page.click('#nav button[data-view="community"]');
@@ -132,6 +132,6 @@ test("goal run with AI toggle falls back gracefully (no key configured)", async 
 
   // AI is not configured in the harness → it must still produce a real run and
   // tell the user it used the rule-based strategy.
-  await expect(page.locator("#g-stats")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("#g-card")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("#g-msg")).toContainText("rule-based");
 });
