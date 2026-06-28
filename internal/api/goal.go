@@ -75,7 +75,7 @@ const (
 	goalMaxBars     = 1000
 	goalMinBars     = 60
 	goalDefaultBars = 500
-	goalHistoryMax  = 200
+ 	goalHistoryMax  = 200
 )
 
 // handleGoalRun runs a paper goal over real candles and returns rich stats.
@@ -216,6 +216,11 @@ func (s *Server) aiBias(ctx context.Context, subject, symbol string, price float
 	decision, err := advisor.Decide(ctx, sig)
 	if err != nil {
 		s.logger.Warn("goal AI bias failed", "symbol", symbol, "byo", byo, "error", err)
+		// Show the real upstream reason to the admin (so misconfig — bad key, wrong
+		// model — is diagnosable), but never to ordinary users.
+		if s.isAdminSubject(subject) {
+			return campaign.BiasBoth, "AI error (admin): " + err.Error() + " — used the rule-based strategy."
+		}
 		return campaign.BiasBoth, "AI was unavailable — used the rule-based strategy (both sides)."
 	}
 	if meter {
