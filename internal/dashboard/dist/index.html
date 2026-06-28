@@ -213,6 +213,8 @@
       .flag.live { background: rgba(0, 255, 153, 0.15); color: var(--profit); }
       .flag.testnet { background: rgba(0, 245, 255, 0.15); color: var(--primary); }
       .flag.paper { background: rgba(148, 163, 184, 0.18); color: var(--muted); }
+      .flag.auto { background: rgba(255, 45, 130, 0.16); color: var(--pink); }
+      .fmeta { font-size: 0.78rem; color: var(--muted); padding-bottom: 0.15rem; }
       .flight .fsym { font-weight: 700; }
       .flight .fpnl { margin-left: auto; font-family: var(--font-mono); font-weight: 600; }
       .fhash { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); padding-bottom: 0.5rem; border-bottom: 1px solid #ffffff14; }
@@ -291,6 +293,7 @@
           <div class="atext">
             <div class="ahead">Everything looks healthy.</div>
             <div class="asub">Market trend <b id="home-market">—</b> · Confidence <b id="home-confidence">—</b></div>
+            <div class="asub" id="home-mission" style="margin-top:0.2rem">Latest mission —</div>
           </div>
         </div>
         <button class="primary cta" id="home-start" type="button">Start Trading →</button>
@@ -439,8 +442,8 @@
         Home
       </button>
       <button data-view="orders" class="on">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 5-7 4 5"/><path d="M3 21h18"/></svg>
-        Trade
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5L12 3l7.5 13.5M9 13.5h6M9.5 21l2.5-3 2.5 3"/></svg>
+        Mission
       </button>
       <button data-view="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
@@ -580,6 +583,15 @@
             $("home-risk").textContent = (r0.risk_pct != null) ? escapeHtml(String(r0.risk_pct)) + "%" : "—";
           } else { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
         } catch (_) { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
+        // recorder → latest mission
+        try {
+          const rec = await (await fetch("/api/recorder", { headers: authHeaders() })).json();
+          const e = (rec && rec.entries && rec.entries[0]) || null;
+          if (e) {
+            const pnl = Number(e.pnl) || 0;
+            $("home-mission").innerHTML = `Latest mission <b>#${e.mission_no}</b> · ${escapeHtml(e.symbol)} <span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span> <b class="${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</b>`;
+          } else { $("home-mission").textContent = "No missions yet — run a goal to begin."; }
+        } catch (_) { $("home-mission").textContent = ""; }
       }
 
       // ---- auth: password ----
@@ -830,12 +842,19 @@
             ? `<b>Merkle root</b> ${escapeHtml(root.slice(0, 40))}…<br/><span title="${escapeHtml(d.anchor_note || "")}">⛓ ${d.anchored ? "anchored on-chain" : "anchors on-chain at launch"}</span>`
             : "";
           const feed = d.entries || [];
-          $("rec-feed").innerHTML = feed.length ? feed.map((e) => {
-            const when = new Date(e.at).toLocaleString();
-            const pnl = Number(e.pnl) || 0;
-            return `<div class="flight"><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span><span class="fsym">${escapeHtml(e.symbol)}</span><span style="color:#94A3B8">${escapeHtml(e.side || e.action)}</span><span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div><div class="fhash">${escapeHtml((e.hash || "").slice(0, 24))}… · ${escapeHtml(when)}</div>`;
-          }).join("") : "<p style='font-size:0.85rem;color:#94A3B8'>No flights recorded yet — ANNY logs every decision here. Run a goal, or start a testnet campaign, to begin your record.</p>";
+          $("rec-feed").innerHTML = feed.length
+            ? feed.map((e) => missionRow(e)).join("")
+            : "<p style='font-size:0.85rem;color:#94A3B8'>No missions recorded yet — ANNY logs every decision here. Run a goal, or start a testnet campaign, to begin your record.</p>";
         } catch (e) { $("rec-feed").textContent = "Could not load the recorder."; }
+      }
+      function missionRow(e) {
+        const when = new Date(e.at).toLocaleString();
+        const pnl = Number(e.pnl) || 0;
+        const lev = e.leverage ? " " + e.leverage + "x" : "";
+        const auto = e.autonomous ? '<span class="flag auto">auto</span>' : "";
+        return `<div class="flight"><span class="fsym">Mission #${e.mission_no}</span><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span>${auto}<span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div>`
+          + `<div class="fmeta">${escapeHtml(e.symbol)} · ${escapeHtml((e.side || e.action) + lev)}${e.reason ? " · " + escapeHtml(e.reason) : ""}</div>`
+          + `<div class="fhash">${escapeHtml((e.hash || "").slice(0, 20))}… · ${escapeHtml(when)}</div>`;
       }
 
       // ---- history ----
