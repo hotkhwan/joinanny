@@ -3,6 +3,7 @@ package api
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"bottrade/internal/journal"
@@ -10,6 +11,20 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// missionReason summarises why a Mission ran, from its strategy and any AI
+// models that voted. Richer reason/confidence will come once decision context
+// is persisted alongside the trade.
+func missionReason(strategy string, models []string) string {
+	parts := make([]string, 0, 2)
+	if strategy != "" {
+		parts = append(parts, strategy)
+	}
+	if len(models) > 0 {
+		parts = append(parts, "AI: "+strings.Join(models, "+"))
+	}
+	return strings.Join(parts, " · ")
+}
 
 // The Flight Recorder is ANNY's transparency feed: an append-only, content-
 // hashed log of every decision and result the companion produced for this user —
@@ -21,16 +36,21 @@ import (
 const recorderMaxEntries = 100
 
 type recorderEntry struct {
-	At     time.Time `json:"at"`
-	Kind   string    `json:"kind"`  // "trade" | "goal"
-	Label  string    `json:"label"` // paper | testnet | live
-	Symbol string    `json:"symbol"`
-	Side   string    `json:"side,omitempty"`
-	Action string    `json:"action"`
-	Detail string    `json:"detail,omitempty"`
-	PnL    string    `json:"pnl"`
-	Win    bool      `json:"win"`
-	Hash   string    `json:"hash"`
+	MissionNo  int       `json:"mission_no"`
+	At         time.Time `json:"at"`
+	Kind       string    `json:"kind"`       // "trade" | "goal"
+	Label      string    `json:"label"`      // paper | testnet | live
+	Autonomous bool      `json:"autonomous"` // ran as an ANNY campaign
+	Symbol     string    `json:"symbol"`
+	Side       string    `json:"side,omitempty"`
+	Leverage   int       `json:"leverage,omitempty"`
+	Entry      string    `json:"entry,omitempty"`
+	Exit       string    `json:"exit,omitempty"`
+	Action     string    `json:"action"`
+	Reason     string    `json:"reason,omitempty"`
+	PnL        string    `json:"pnl"`
+	Win        bool      `json:"win"`
+	Hash       string    `json:"hash"`
 }
 
 type recorderStats struct {
@@ -63,15 +83,19 @@ func (s *Server) handleRecorder(c fiber.Ctx) error {
 					at = t.OpenedAt
 				}
 				entries = append(entries, recorderEntry{
-					At:     at,
-					Kind:   "trade",
-					Label:  label,
-					Symbol: t.Symbol,
-					Side:   t.Side,
-					Action: string(t.Outcome),
-					Detail: t.Strategy,
-					PnL:    t.PnLUSDT.String(),
-					Win:    win,
+					At:         at,
+					Kind:       "trade",
+					Label:      label,
+					Autonomous: t.CampaignID != "",
+					Symbol:     t.Symbol,
+					Side:       t.Side,
+					Leverage:   t.Leverage,
+					Entry:      t.Entry.String(),
+					Exit:       t.Exit.String(),
+					Action:     string(t.Outcome),
+					Reason:     missionReason(t.Strategy, t.Models),
+					PnL:        t.PnLUSDT.String(),
+					Win:        win,
 					Hash: transparency.Hash("trade", t.ID, t.Symbol, t.Side, t.Mode,
 						t.Entry.String(), t.Exit.String(), t.PnLUSDT.String(), string(t.Outcome), at.UTC().Format(time.RFC3339)),
 				})
@@ -104,8 +128,8 @@ func (s *Server) handleRecorder(c fiber.Ctx) error {
 					Kind:   "goal",
 					Label:  transparency.LabelPaper,
 					Symbol: r.Symbol,
-					Action: "paper goal · " + r.Strategy,
-					Detail: r.Verdict + " · WR " + strconv.FormatFloat(r.WinRatePct, 'f', 0, 64) + "%",
+					Action: "paper goal",
+					Reason: r.Strategy + " · " + r.Verdict + " · WR " + strconv.FormatFloat(r.WinRatePct, 'f', 0, 64) + "%",
 					PnL:    r.RealizedPnL,
 					Win:    win,
 					Hash: transparency.Hash("goal", r.Symbol, r.Strategy, r.ProfitTarget, r.Capital,
@@ -116,10 +140,14 @@ func (s *Server) handleRecorder(c fiber.Ctx) error {
 		}
 	}
 
-	// Newest first.
+	// Newest first; number Missions oldest=1 so the count grows over time.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].At.After(entries[j].At) })
-	if len(entries) > 0 {
-		since := entries[len(entries)-1].At
+	total := len(entries)
+	for i := range entries {
+		entries[i].MissionNo = total - i
+	}
+	if total > 0 {
+		since := entries[total-1].At
 		stats.Since = &since
 	}
 	if stats.RealTrades > 0 {

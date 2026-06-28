@@ -65,6 +65,10 @@ type AppConfig struct {
 	// execution. It additionally requires testnet + real-trading-off + not
 	// dry-run at runtime, so it can never place live-account orders.
 	CampaignLiveEnabled bool
+	// AccessOpen, when true, auto-approves every signed-in user (free & open).
+	// When false (default, pre-launch), non-admin users must request access and
+	// be approved before the app unlocks beyond Home.
+	AccessOpen bool
 }
 
 type TelegramConfig struct {
@@ -211,6 +215,7 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 
 	cfg.App.Env = reader.string("APP_ENV", cfg.App.Env)
 	cfg.App.LogLevel = strings.ToLower(reader.string("LOG_LEVEL", cfg.App.LogLevel))
+	cfg.App.AccessOpen = reader.bool("ACCESS_OPEN", cfg.App.AccessOpen)
 	cfg.App.DryRun = reader.bool("DRY_RUN", cfg.App.DryRun)
 	cfg.App.RealTradingEnabled = reader.bool("REAL_TRADING_ENABLED", cfg.App.RealTradingEnabled)
 	cfg.App.OrderSizingMode = strings.ToLower(reader.string("ORDER_SIZING_MODE", cfg.App.OrderSizingMode))
@@ -416,8 +421,11 @@ func validate(cfg Config, problems *[]string) {
 		addProblem(problems, "EXCHANGE_INFO_CACHE_TTL_SECONDS must be greater than 0")
 	}
 
-	if !cfg.App.DryRun && (cfg.Binance.APIKey == "" || cfg.Binance.APISecret == "") {
-		addProblem(problems, "BINANCE_API_KEY and BINANCE_API_SECRET are required when DRY_RUN=false")
+	if !cfg.App.DryRun && !cfg.Auth.Enabled && (cfg.Binance.APIKey == "" || cfg.Binance.APISecret == "") {
+		// When per-user credentials are enabled (CREDENTIAL_ENCRYPTION_KEY set),
+		// each user trades on their own stored key, so the shared platform key is
+		// optional — keyless users simply stay on the dry-run fallback executor.
+		addProblem(problems, "BINANCE_API_KEY and BINANCE_API_SECRET are required when DRY_RUN=false (unless per-user credentials are enabled via CREDENTIAL_ENCRYPTION_KEY)")
 	}
 
 	if cfg.App.RealTradingEnabled {

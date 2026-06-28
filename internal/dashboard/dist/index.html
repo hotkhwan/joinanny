@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ANNY · AI Trading Companion</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050816'/%3E%3Cpath d='M15 22 L19 8 L32 19 Z' fill='%23FF2D82'/%3E%3Cpath d='M49 22 L45 8 L32 19 Z' fill='%23FF2D82'/%3E%3Crect x='13' y='17' width='38' height='32' rx='13' fill='%230b1220' stroke='%2300F5FF' stroke-width='2'/%3E%3Cpath d='M24 29 l5 4 -5 4' stroke='%2300F5FF' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M40 29 l-5 4 5 4' stroke='%2300F5FF' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050816'/%3E%3Cpath d='M32 8 L55 51 L9 51 Z M32 23 L45 48 L19 48 Z' fill='%23ffffff' fill-rule='evenodd' stroke='%23FF2D82' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M32 31 L33.3 37.5 L40 39 L33.3 40.5 L32 47 L30.7 40.5 L24 39 L30.7 37.5 Z' fill='%23FF2D82'/%3E%3C/svg%3E" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -213,6 +213,28 @@
       .flag.live { background: rgba(0, 255, 153, 0.15); color: var(--profit); }
       .flag.testnet { background: rgba(0, 245, 255, 0.15); color: var(--primary); }
       .flag.paper { background: rgba(148, 163, 184, 0.18); color: var(--muted); }
+      .flag.auto { background: rgba(255, 45, 130, 0.16); color: var(--pink); }
+      .fmeta { font-size: 0.78rem; color: var(--muted); padding-bottom: 0.15rem; }
+      .mission { padding: 0.45rem 0.5rem; border-bottom: 1px solid #ffffff10; }
+      .mission:last-child { border-bottom: 0; }
+      .mission.tap { cursor: pointer; border-radius: 0.6rem; transition: background 0.15s; }
+      .mission.tap:hover { background: rgba(0, 245, 255, 0.06); }
+      .replayhint { font-size: 0.62rem; color: var(--primary); opacity: 0.85; }
+      .lbrow { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid #ffffff10; font-size: 0.82rem; flex-wrap: wrap; }
+      .lbrow:last-child { border-bottom: 0; }
+      .lbrank { font-weight: 700; color: var(--primary); }
+      .lbname { font-weight: 600; }
+      .lbstat { font-size: 0.76rem; color: var(--text); font-variant-numeric: tabular-nums; }
+      .cedge { font-size: 0.66rem; font-weight: 700; color: var(--amber); background: rgba(245, 165, 36, 0.14); padding: 0.05rem 0.35rem; border-radius: 999px; }
+      .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 22, 0.78); backdrop-filter: blur(4px); display: flex; align-items: flex-end; justify-content: center; }
+      .overlay .sheet { width: 100%; max-width: 40rem; margin: 0 1rem; background: #0b1220; border: 1px solid var(--card-border); border-radius: 1rem 1rem 0 0; padding: 1rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom)); max-height: 86vh; overflow: auto; box-shadow: 0 -20px 60px -20px rgba(0, 0, 0, 0.9); }
+      .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+      .replay-steps { display: grid; gap: 0.5rem; margin: 0.4rem 0 0.8rem; }
+      .rstep { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.55rem 0.7rem; border: 1px solid var(--card-border); border-radius: 0.6rem; background: rgba(5, 8, 22, 0.5); opacity: 0.25; transform: translateY(4px); transition: opacity 0.35s, transform 0.35s, border-color 0.35s; }
+      .rstep.on { opacity: 1; transform: none; border-color: rgba(0, 245, 255, 0.4); }
+      .rstep .ic { font-size: 1.1rem; flex: 0 0 auto; }
+      .rstep .rk { font-size: 0.7rem; color: var(--muted); }
+      .rstep .rv { font-weight: 600; font-variant-numeric: tabular-nums; }
       .flight .fsym { font-weight: 700; }
       .flight .fpnl { margin-left: auto; font-family: var(--font-mono); font-weight: 600; }
       .fhash { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); padding-bottom: 0.5rem; border-bottom: 1px solid #ffffff14; }
@@ -225,20 +247,12 @@
     <template id="mascot-tpl">
       <svg class="mascot" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
-          <linearGradient id="novaG2" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
+          <linearGradient id="annyA2" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9aa3b2"/>
           </linearGradient>
         </defs>
-        <path d="M13 21 L17 5 L31 18 Z" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M51 21 L47 5 L33 18 Z" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M17.5 17 L19 9 L26 16 Z" fill="#FF2D82"/>
-        <path d="M46.5 17 L45 9 L38 16 Z" fill="#FF2D82"/>
-        <rect x="5" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
-        <rect x="53" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
-        <rect x="11" y="16" width="42" height="34" rx="14" fill="#0b1220" stroke="url(#novaG2)" stroke-width="2"/>
-        <path class="eye" d="M23 28 l5 4 -5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <path class="eye" d="M41 28 l-5 4 5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M27 42 Q32 46 37 42" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
+        <path d="M32 6 L57 53 L7 53 Z M32 22 L46 50 L18 50 Z" fill="url(#annyA2)" fill-rule="evenodd" stroke="#FF2D82" stroke-width="1.3" stroke-linejoin="round"/>
+        <path d="M32 30 L33.3 37 L40 38 L33.3 39 L32 46 L30.7 39 L24 38 L30.7 37 Z" fill="#FF2D82"/>
       </svg>
     </template>
 
@@ -247,20 +261,12 @@
         <div class="brand">
           <svg class="mascot" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <defs>
-              <linearGradient id="novaG" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#0066FF"/>
+              <linearGradient id="annyA" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9aa3b2"/>
               </linearGradient>
             </defs>
-            <path d="M13 21 L17 5 L31 18 Z" fill="#0b1220" stroke="url(#novaG)" stroke-width="2" stroke-linejoin="round"/>
-            <path d="M51 21 L47 5 L33 18 Z" fill="#0b1220" stroke="url(#novaG)" stroke-width="2" stroke-linejoin="round"/>
-            <path d="M17.5 17 L19 9 L26 16 Z" fill="#FF2D82"/>
-            <path d="M46.5 17 L45 9 L38 16 Z" fill="#FF2D82"/>
-            <rect x="5" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
-            <rect x="53" y="26" width="6" height="14" rx="3" fill="#FF2D82"/>
-            <rect x="11" y="16" width="42" height="34" rx="14" fill="#0b1220" stroke="url(#novaG)" stroke-width="2"/>
-            <path class="eye" d="M23 28 l5 4 -5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <path class="eye" d="M41 28 l-5 4 5 4" stroke="#00F5FF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M27 42 Q32 46 37 42" stroke="#00F5FF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.85"/>
+            <path d="M32 6 L57 53 L7 53 Z M32 22 L46 50 L18 50 Z" fill="url(#annyA)" fill-rule="evenodd" stroke="#FF2D82" stroke-width="1.3" stroke-linejoin="round"/>
+            <path d="M32 30 L33.3 37 L40 38 L33.3 39 L32 46 L30.7 39 L24 38 L30.7 37 Z" fill="#FF2D82"/>
           </svg>
           <div>
             <div class="word">ANNY</div>
@@ -291,6 +297,7 @@
           <div class="atext">
             <div class="ahead">Everything looks healthy.</div>
             <div class="asub">Market trend <b id="home-market">—</b> · Confidence <b id="home-confidence">—</b></div>
+            <div class="asub" id="home-mission" style="margin-top:0.2rem">Latest mission —</div>
           </div>
         </div>
         <button class="primary cta" id="home-start" type="button">Start Trading →</button>
@@ -428,7 +435,28 @@
           <div class="actions" style="margin-top:0.8rem"><button class="primary" id="saveKey">Save profile</button></div>
           <div class="msg" id="keyMsg"></div>
         </div>
+        <div class="card hidden" id="admin-card">
+          <strong>🛡 Crew approvals</strong>
+          <p style="margin:0.3rem 0 0.6rem">New members waiting for access. Approve to unlock the app for them.</p>
+          <div id="admin-approvals">Loading…</div>
+        </div>
         <div class="card" id="status">Loading status…</div>
+      </section>
+
+      <!-- COMMUNITY -->
+      <section id="view-community" class="hidden">
+        <div class="card">
+          <strong>👥 Community</strong>
+          <p style="margin:0.3rem 0 0.6rem">Proof real members make this work — by their own style. Probability, not signals. <b>Not financial advice.</b></p>
+          <div id="comm-summary" class="merkle"></div>
+          <label>🏆 Strategy leaderboard</label>
+          <div id="comm-strats">Loading…</div>
+        </div>
+        <div class="card">
+          <strong>🔥 Coins members are winning on</strong>
+          <p style="margin:0.3rem 0 0.6rem">⭐ = community edge (proven win-rate). A probability of past success, not a buy signal.</p>
+          <div id="comm-coins"></div>
+        </div>
       </section>
     </main>
 
@@ -439,17 +467,31 @@
         Home
       </button>
       <button data-view="orders" class="on">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 5-7 4 5"/><path d="M3 21h18"/></svg>
-        Trade
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5L12 3l7.5 13.5M9 13.5h6M9.5 21l2.5-3 2.5 3"/></svg>
+        Mission
       </button>
       <button data-view="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
         Recorder
       </button>
+      <button data-view="community">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/><path d="M16 3.5a3 3 0 0 1 0 5.8M22 21v-1a5 5 0 0 0-3.5-4.7"/></svg>
+        Community
+      </button>
       <button data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.3-1.3L14 3h-4l-.3 2.2A7 7 0 0 0 7.4 6.5l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.3 1.3L10 21h4l.3-2.2a7 7 0 0 0 2.3-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z"/></svg>
         Settings
       </button>
+    </div>
+
+    <!-- Mission Replay overlay -->
+    <div id="replay" class="overlay hidden">
+      <div class="sheet">
+        <div class="sheet-head"><strong id="replay-title">Mission Replay</strong><button class="iconbtn" id="replay-close">✕</button></div>
+        <div id="replay-steps" class="replay-steps"></div>
+        <div class="actions"><button class="primary" id="replay-play">▶ Replay</button></div>
+        <div class="merkle" id="replay-hash"></div>
+      </div>
     </div>
 
     <script>
@@ -475,15 +517,57 @@
         const p = location.pathname.replace(/\/+$/, "");
         if (p === "" || p === "/home") return "home";
         if (p === "/history") return "history";
+        if (p === "/community") return "community";
         if (p === "/setting" || p === "/settings") return "settings";
         if (p === "/order" || p === "/orders") return "orders";
         return "home";
       }
+      // ---- access gate (pre-launch: non-admin must be approved) ----
+      let me = null;
+      function unlocked() { return !me || me.approved || me.admin || me.open; }
+      async function loadMe() {
+        try { me = await (await fetch("/api/me", { headers: authHeaders() })).json(); }
+        catch (_) { me = { approved: true }; } // soft gate — never hard-lock on error
+        applyGate();
+      }
+      function applyGate() {
+        const ok = unlocked();
+        document.querySelectorAll("#nav button").forEach((b) => { if (b.dataset.view !== "home") b.classList.toggle("hidden", !ok); });
+        $("admin-card").classList.toggle("hidden", !(me && me.admin));
+        if (me && me.admin) loadAdminPending();
+        const btn = $("home-start");
+        if (ok) { btn.textContent = "Start Trading →"; btn.disabled = false; btn.onclick = () => navigate("orders"); }
+        else if (me && me.status === "requested") { btn.textContent = "⏳ Access requested"; btn.disabled = true; btn.onclick = null; }
+        else { btn.textContent = "🔒 Request access to crew"; btn.disabled = false; btn.onclick = requestAccess; }
+        if (!ok) showView("home");
+      }
+      async function requestAccess() {
+        const d = await (await fetch("/api/access/request", { method: "POST", headers: authHeaders() })).json().catch(() => ({}));
+        if (d.status) { me.status = d.status; if (d.status === "approved") me.approved = true; applyGate(); }
+      }
+      async function loadAdminPending() {
+        try {
+          const d = await (await fetch("/api/admin/pending", { headers: authHeaders() })).json();
+          const list = d.pending || [];
+          $("admin-approvals").innerHTML = list.length
+            ? list.map((r) => `<div class="profile"><span class="name">${escapeHtml(r.name || "member")}</span><span class="badge">${escapeHtml(r.subject)}</span><span class="spacer"></span><button class="ghost" data-approve="${escapeHtml(r.subject)}" style="width:auto;padding:0.3rem 0.7rem">Approve</button></div>`).join("")
+            : "<p style='font-size:0.85rem;color:var(--muted)'>No pending requests.</p>";
+          $("admin-approvals").querySelectorAll("[data-approve]").forEach((b) => (b.onclick = () => approveUser(b.dataset.approve)));
+        } catch (e) {}
+      }
+      async function approveUser(subject) {
+        await fetch("/api/admin/approve", { method: "POST", headers: authHeaders(), body: JSON.stringify({ subject }) });
+        loadAdminPending();
+      }
+
       function showView(name) {
-        ["home", "orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
+        // Locked users are confined to Home.
+        if (me && !unlocked() && name !== "home" && name !== "login") name = "home";
+        ["home", "orders", "history", "community", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
         if (name === "home") loadHome();
         if (name === "history") { loadRecorder(); loadHistory(); }
+        if (name === "community") loadLeaderboard();
         if (tgApp && tgApp.BackButton) { name === "home" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
       }
       function navigate(view) {
@@ -528,8 +612,10 @@
         renderFavs();
         startPricePolling();
         loadGoalHistory();
+        loadLeaderboard();
         loadStatus();
         loadHome();
+        loadMe();
       }
       $("logout").onclick = () => {
         localStorage.removeItem("token");
@@ -580,6 +666,15 @@
             $("home-risk").textContent = (r0.risk_pct != null) ? escapeHtml(String(r0.risk_pct)) + "%" : "—";
           } else { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
         } catch (_) { $("home-capital").textContent = "—"; $("home-risk").textContent = "—"; }
+        // recorder → latest mission
+        try {
+          const rec = await (await fetch("/api/recorder", { headers: authHeaders() })).json();
+          const e = (rec && rec.entries && rec.entries[0]) || null;
+          if (e) {
+            const pnl = Number(e.pnl) || 0;
+            $("home-mission").innerHTML = `Latest mission <b>#${e.mission_no}</b> · ${escapeHtml(e.symbol)} <span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span> <b class="${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</b>`;
+          } else { $("home-mission").textContent = "No missions yet — run a goal to begin."; }
+        } catch (_) { $("home-mission").textContent = ""; }
       }
 
       // ---- auth: password ----
@@ -629,7 +724,8 @@
           box.innerHTML = list.map((p) => {
             const net = p.testnet ? '<span class="badge">testnet</span>' : '<span class="badge live">live</span>';
             const active = p.active ? '<span class="badge active">active</span>' : `<button class="ghost" data-active="${escapeHtml(p.profile)}">Make active</button>`;
-            return `<div class="profile"><span class="name">${escapeHtml(p.profile)}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
+            const label = p.profile ? escapeHtml(p.profile) : '<i style="color:var(--muted)">(unnamed)</i>';
+            return `<div class="profile"><span class="name">${label}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
           }).join("");
           box.querySelectorAll("[data-active]").forEach((b) => (b.onclick = () => setActive(b.dataset.active)));
           box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => removeProfile(b.dataset.del)));
@@ -641,9 +737,12 @@
         refreshKeyStatus();
       }
       async function removeProfile(profile) {
-        if (!confirm(`Remove profile “${profile}”?`)) return;
-        const r = await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() });
-        if (r.ok) keyMsg(`Removed “${profile}”.`, true);
+        const name = profile || "(unnamed)";
+        if (!confirm(`Remove profile “${name}”?`)) return;
+        // ?unnamed=1 lets the backend clean up a legacy empty-named profile.
+        const qs = profile ? "profile=" + encodeURIComponent(profile) : "profile=&unnamed=1";
+        const r = await fetch("/api/credentials?" + qs, { method: "DELETE", headers: authHeaders() });
+        if (r.ok) keyMsg(`Removed “${name}”.`, true);
         else { const d = await r.json().catch(() => ({})); keyMsg(d.error || `Could not remove (${r.status})`, false); }
         refreshKeyStatus();
       }
@@ -731,7 +830,7 @@
           const cls = chg == null ? "" : chg >= 0 ? "up" : "down";
           const chgTxt = chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
           const px = t ? `<div>${formatPrice(t.last_price)}</div><div class="chg ${cls}">${chgTxt}</div>` : "<div>…</div>";
-          return `<div class="fav"><span class="sym" data-coin="${s}">${s}</span><span class="px">${px}</span><button class="iconbtn" data-up="${i}" title="Move up">↑</button><button class="iconbtn" data-down="${i}" title="Move down">↓</button><button class="iconbtn" data-rm="${s}" title="Remove">✕</button></div>`;
+          return `<div class="fav"><span class="sym" data-coin="${s}">${s}${edgeBadge(s)}</span><span class="px">${px}</span><button class="iconbtn" data-up="${i}" title="Move up">↑</button><button class="iconbtn" data-down="${i}" title="Move down">↓</button><button class="iconbtn" data-rm="${s}" title="Remove">✕</button></div>`;
         }).join("");
         box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => loadIntoGoal(b.dataset.coin)));
         box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.up, -1)));
@@ -750,10 +849,11 @@
       let coinTimer = null;
       $("coinSearch").addEventListener("input", (e) => {
         clearTimeout(coinTimer); const q = e.target.value.trim();
+        if (!q) { $("coinResults").innerHTML = ""; return; } // empty search → no chips
         coinTimer = setTimeout(async () => {
           const d = await (await fetch("/api/symbols?q=" + encodeURIComponent(q), { headers: authHeaders() })).json();
           const box = $("coinResults");
-          box.innerHTML = (d.symbols || []).slice(0, 16).map((s) => `<button class="chip" data-add="${s}">☆ ${s}</button>`).join("");
+          box.innerHTML = (d.symbols || []).slice(0, 16).map((s) => `<button class="chip" data-add="${s}">☆ ${s}${edgeBadge(s)}</button>`).join("");
           box.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => addFav(b.dataset.add)));
         }, 250);
       });
@@ -830,12 +930,81 @@
             ? `<b>Merkle root</b> ${escapeHtml(root.slice(0, 40))}…<br/><span title="${escapeHtml(d.anchor_note || "")}">⛓ ${d.anchored ? "anchored on-chain" : "anchors on-chain at launch"}</span>`
             : "";
           const feed = d.entries || [];
-          $("rec-feed").innerHTML = feed.length ? feed.map((e) => {
-            const when = new Date(e.at).toLocaleString();
-            const pnl = Number(e.pnl) || 0;
-            return `<div class="flight"><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span><span class="fsym">${escapeHtml(e.symbol)}</span><span style="color:#94A3B8">${escapeHtml(e.side || e.action)}</span><span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div><div class="fhash">${escapeHtml((e.hash || "").slice(0, 24))}… · ${escapeHtml(when)}</div>`;
-          }).join("") : "<p style='font-size:0.85rem;color:#94A3B8'>No flights recorded yet — ANNY logs every decision here. Run a goal, or start a testnet campaign, to begin your record.</p>";
+          recorderEntries = feed;
+          $("rec-feed").innerHTML = feed.length
+            ? feed.map((e, i) => missionRow(e, i)).join("")
+            : "<p style='font-size:0.85rem;color:#94A3B8'>No missions recorded yet — ANNY logs every decision here. Run a goal, or start a testnet campaign, to begin your record.</p>";
+          $("rec-feed").querySelectorAll("[data-mi]").forEach((el) => (el.onclick = () => openReplay(recorderEntries[+el.dataset.mi])));
         } catch (e) { $("rec-feed").textContent = "Could not load the recorder."; }
+      }
+      function missionRow(e, i) {
+        const when = new Date(e.at).toLocaleString();
+        const pnl = Number(e.pnl) || 0;
+        const lev = e.leverage ? " " + e.leverage + "x" : "";
+        const auto = e.autonomous ? '<span class="flag auto">auto</span>' : "";
+        return `<div class="mission tap" data-mi="${i}">`
+          + `<div class="flight"><span class="fsym">Mission #${e.mission_no}</span><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span>${auto}<span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div>`
+          + `<div class="fmeta">${escapeHtml(e.symbol)} · ${escapeHtml((e.side || e.action) + lev)}${e.reason ? " · " + escapeHtml(e.reason) : ""}</div>`
+          + `<div class="fhash">${escapeHtml((e.hash || "").slice(0, 20))}… · ${escapeHtml(when)} · <span class="replayhint">▶ replay</span></div>`
+          + `</div>`;
+      }
+
+      // ---- mission replay ----
+      let recorderEntries = [], replayTimer = null;
+      function replayStep(ic, k, v, cls) {
+        return `<div class="rstep"><span class="ic">${ic}</span><div><div class="rk">${escapeHtml(k)}</div><div class="rv ${cls || ""}">${escapeHtml(v)}</div></div></div>`;
+      }
+      function openReplay(e) {
+        if (!e) return;
+        const pnl = Number(e.pnl) || 0;
+        const steps = [];
+        steps.push(["🛰", "Signal", e.reason || (e.action + " · " + e.symbol)]);
+        if (e.side) steps.push(["🧭", "Direction", e.side.toUpperCase() + (e.leverage ? " " + e.leverage + "x" : "")]);
+        if (e.entry && Number(e.entry) > 0) steps.push(["🎯", "Entry", formatPrice(e.entry)]);
+        if (e.exit && Number(e.exit) > 0) steps.push(["🏁", "Exit", formatPrice(e.exit)]);
+        steps.push(["📊", "Result · " + e.label, fmtPnl(e.pnl) + (e.label === "paper" ? " USDT (paper)" : " USDT"), pnl >= 0 ? "up" : "down"]);
+        steps.push(["🔒", "Verified hash", (e.hash || "").slice(0, 32) + "…"]);
+        $("replay-title").textContent = "Mission #" + e.mission_no + " · Replay";
+        $("replay-steps").innerHTML = steps.map((s) => replayStep(s[0], s[1], s[2], s[3])).join("");
+        $("replay-hash").innerHTML = `<b>Tamper-evident</b> — this Mission's hash is part of the Flight Recorder Merkle root. Full telemetry (funding · OI · AI confidence) and on-chain proof land with the blockchain anchor.`;
+        $("replay").classList.remove("hidden");
+        playReplay();
+      }
+      function playReplay() {
+        if (replayTimer) clearInterval(replayTimer);
+        const steps = [...document.querySelectorAll("#replay-steps .rstep")];
+        steps.forEach((s) => s.classList.remove("on"));
+        let i = 0;
+        const tick = () => { if (i < steps.length) steps[i++].classList.add("on"); else clearInterval(replayTimer); };
+        tick();
+        replayTimer = setInterval(tick, 600);
+      }
+      $("replay-play").onclick = playReplay;
+      $("replay-close").onclick = () => { $("replay").classList.add("hidden"); if (replayTimer) clearInterval(replayTimer); };
+      $("replay").onclick = (e) => { if (e.target.id === "replay") $("replay-close").click(); };
+
+      // ---- community leaderboard + coin edges ----
+      let coinEdge = {};
+      async function loadLeaderboard() {
+        try {
+          const d = await (await fetch("/api/leaderboard", { headers: authHeaders() })).json();
+          coinEdge = {};
+          (d.coins || []).forEach((c) => (coinEdge[c.symbol] = c));
+          $("comm-summary").innerHTML = `<b>${d.total_runs || 0}</b> community missions analysed · paper-based · probability, not advice`;
+          const strats = d.strategies || [];
+          $("comm-strats").innerHTML = strats.length
+            ? strats.map((s, i) => `<div class="lbrow"><span class="lbrank">#${i + 1}</span><span class="lbname">${escapeHtml(s.name)}</span><span class="lbstat"><b class="${s.avg_profit_pct >= 0 ? "up" : "down"}">${s.avg_profit_pct >= 0 ? "+" : ""}${s.avg_profit_pct}%</b></span><span class="lbstat">${Math.round(s.win_rate)}% WR</span><span class="lbstat">Sharpe ${s.sharpe}</span><span class="lbstat" style="color:#94A3B8">${s.runs}r</span></div>`).join("")
+            : "<p style='font-size:0.85rem;color:#94A3B8'>No community data yet — run a goal to contribute the first mission.</p>";
+          const coins = d.coins || [];
+          $("comm-coins").innerHTML = coins.length
+            ? coins.map((c) => `<div class="fav"><span class="sym">${escapeHtml(c.symbol)}</span><span class="px"><div><span class="cedge">⭐ ${c.edge}%</span></div><div class="chg ${c.avg_profit_pct >= 0 ? "up" : "down"}">${c.avg_profit_pct >= 0 ? "+" : ""}${c.avg_profit_pct}% · ${c.runs}r</div></span></div>`).join("")
+            : "<p style='font-size:0.85rem;color:#94A3B8'>No coins yet.</p>";
+          renderFavs();
+        } catch (e) { $("comm-strats").textContent = "Could not load community stats."; }
+      }
+      function edgeBadge(sym) {
+        const c = coinEdge[normSym(sym)] || coinEdge[sym];
+        return c ? ` <span class="cedge">⭐${c.edge}%</span>` : "";
       }
 
       // ---- history ----
