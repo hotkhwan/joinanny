@@ -11,6 +11,7 @@ import (
 
 	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/plans"
 
@@ -29,6 +30,125 @@ func TestHandlerRejectsUnauthorizedUser(t *testing.T) {
 
 	if len(sender.messages) != 0 {
 		t.Fatalf("sent messages = %d, want 0", len(sender.messages))
+	}
+}
+
+func TestHandlerMarketCommand(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger()).WithMarketData(marketdata.MockProvider{
+		FundingValue:   marketdata.Funding{MarkPrice: decimal.MustParse("68000"), LastFundingRate: decimal.MustParse("0.0001")},
+		OIValue:        marketdata.OpenInterest{OpenInterest: decimal.MustParse("104625")},
+		LongShortValue: marketdata.LongShortRatio{Ratio: decimal.MustParse("1.98"), LongAccount: decimal.MustParse("0.66"), ShortAccount: decimal.MustParse("0.34")},
+		TakerValue:     marketdata.TakerFlow{BuySellRatio: decimal.MustParse("1.97")},
+	}, "5m")
+	sender := &fakeSender{}
+
+	// "/market eth" should normalise to ETHUSDT and report the metrics.
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/market eth")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	got := sender.singleMessage(t)
+	for _, want := range []string{"ETHUSDT", "Funding rate: 0.0001", "Open interest: 104625", "Long/Short accounts: 1.98", "Taker buy/sell: 1.97"} {
+		if !strings.Contains(got.Text, want) {
+			t.Fatalf("market message missing %q: %q", want, got.Text)
+		}
+	}
+}
+
+func TestHandlerMarketCommandWithoutProvider(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+	sender := &fakeSender{}
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/market")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if got := sender.singleMessage(t); !strings.Contains(got.Text, "not configured") {
+		t.Fatalf("message = %q, want not-configured notice", got.Text)
+	}
+}
+
+type fakeMarketWithKlines struct {
+	marketdata.MockProvider
+	closes []float64
+}
+
+func (f fakeMarketWithKlines) Closes(context.Context, string, string, int) ([]float64, error) {
+	return f.closes, nil
+}
+
+func TestHandlerBacktestCommand(t *testing.T) {
+	closes := make([]float64, 0, 80)
+	for i := 0; i < 80; i++ {
+		closes = append(closes, 100+float64(i))
+	}
+	handler := NewHandler(12345, nil, testLogger()).WithMarketData(fakeMarketWithKlines{closes: closes}, "1h")
+	sender := &fakeSender{}
+
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/backtest BTC")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	got := sender.singleMessage(t)
+	for _, want := range []string{"Backtest BTCUSDT", "ema_cross", "rsi_reversion", "Win rate", "Return"} {
+		if !strings.Contains(got.Text, want) {
+			t.Fatalf("backtest message missing %q: %q", want, got.Text)
+		}
+	}
+}
+
+func TestHandlerBacktestWithoutKlines(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+	sender := &fakeSender{}
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/backtest BTC")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if got := sender.singleMessage(t); !strings.Contains(got.Text, "not configured") {
+		t.Fatalf("message = %q, want not-configured notice", got.Text)
+	}
+}
+
+func TestHandlerGoalCommand(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+	sender := &fakeSender{}
+
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/goal profit 10 capital 100 winrate 60")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	got := sender.singleMessage(t)
+	for _, want := range []string{"Goal: make 10 USDT", "100 USDT capital", "Simulation", "target reached", "no real orders"} {
+		if !strings.Contains(got.Text, want) {
+			t.Fatalf("goal message missing %q: %q", want, got.Text)
+		}
+	}
+}
+
+func TestHandlerGoalCommandThaiFallbackAndUsage(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger())
+
+	// Thai-ish text with a usdt-suffixed amount → target parsed via fallback.
+	s1 := &fakeSender{}
+	if err := handler.Handle(context.Background(), s1, textUpdate(12345, 111, "/goal ทำกำไร 10usdt")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if !strings.Contains(s1.singleMessage(t).Text, "Goal: make 10 USDT") {
+		t.Fatalf("thai fallback failed: %q", s1.singleMessage(t).Text)
+	}
+
+	// No target → usage help.
+	s2 := &fakeSender{}
+	if err := handler.Handle(context.Background(), s2, textUpdate(12345, 111, "/goal")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if !strings.Contains(s2.singleMessage(t).Text, "target profit") {
+		t.Fatalf("expected usage help: %q", s2.singleMessage(t).Text)
+	}
+}
+
+func TestHandlerCampaignNotEnabled(t *testing.T) {
+	handler := NewHandler(12345, nil, testLogger()) // no campaign manager wired
+	sender := &fakeSender{}
+	if err := handler.Handle(context.Background(), sender, textUpdate(12345, 111, "/campaign start profit 10")); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if got := sender.singleMessage(t); !strings.Contains(got.Text, "not enabled") {
+		t.Fatalf("message = %q, want not-enabled notice", got.Text)
 	}
 }
 

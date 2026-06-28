@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aliza · Trading</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      :root { color-scheme: light dark; --accent: #3b82f6; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      main { max-width: 40rem; margin: 0 auto; padding: 0 1rem 3rem; }
+      h1 { font-size: 1.25rem; margin: 0; }
+      p { color: #888; margin-top: 0; }
+      .appbar { display: flex; align-items: center; gap: 0.6rem; padding: 1rem 0 0.5rem; }
+      .appbar .spacer { flex: 1; }
+      .who { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+      .who img { width: 1.8rem; height: 1.8rem; border-radius: 50%; object-fit: cover; }
+      .nav { display: flex; gap: 0.4rem; position: sticky; top: 0; padding: 0.5rem 0; background: Canvas; z-index: 5; }
+      .nav button { flex: 1; padding: 0.55rem; border: 0; border-radius: 0.6rem; background: #8881; color: inherit; font-weight: 600; cursor: pointer; }
+      .nav button.on { background: var(--accent); color: #fff; }
+      .card { margin-top: 1rem; border: 1px solid #8883; border-radius: 0.75rem; padding: 1rem 1.1rem; }
+      .row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #8881; }
+      .row:last-child { border-bottom: 0; }
+      label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.2rem; color: #888; }
+      input, select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid #8884; border-radius: 0.5rem; background: transparent; color: inherit; }
+      .actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+      button { padding: 0.55rem; border: 0; border-radius: 0.5rem; cursor: pointer; font-weight: 600; }
+      button.primary { background: var(--accent); color: #fff; flex: 1; }
+      button.ghost { background: #8882; color: inherit; flex: 1; }
+      .msg { margin-top: 0.7rem; font-size: 0.85rem; min-height: 1.1rem; }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+      .chip { padding: 0.3rem 0.7rem; font-size: 0.8rem; font-weight: 500; background: #8882; color: inherit; border-radius: 999px; }
+      .cmdrow { display: flex; gap: 0.5rem; }
+      .output { margin-top: 0.8rem; padding: 0.8rem; background: #8881; border-radius: 0.5rem; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; min-height: 1rem; max-height: 22rem; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .profile { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
+      .profile .name { font-weight: 600; }
+      .badge { font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: #8882; }
+      .badge.live { background: #f59e0b33; color: #f59e0b; }
+      .badge.active { background: #22c55e33; color: #16a34a; }
+      .profile .spacer { flex: 1; }
+      .profile button { flex: 0 0 auto; width: auto; padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+      .coincard { border: 1px solid #8883; border-radius: 0.7rem; padding: 0.8rem 1rem; margin-bottom: 0.6rem; }
+      .coincard .top { display: flex; align-items: baseline; gap: 0.5rem; }
+      .coincard .sym { font-weight: 700; font-size: 1.05rem; }
+      .coincard .pnl { font-weight: 700; }
+      .coincard .pos { color: #16a34a; }
+      .coincard .neg { color: #dc2626; }
+      .coincard .sub { display: flex; gap: 1.2rem; color: #888; font-size: 0.8rem; margin-top: 0.3rem; }
+      .ticket { display: grid; gap: 0.55rem; }
+      .ticket label { margin-top: 0; }
+      .side { display: flex; gap: 0.5rem; }
+      .side button { flex: 1; padding: 0.6rem; font-weight: 700; background: #8882; color: inherit; border: 1px solid transparent; }
+      .side button.long.on { background: #16a34a; color: #fff; }
+      .side button.short.on { background: #dc2626; color: #fff; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+      .lev { display: flex; align-items: center; gap: 0.6rem; }
+      .lev input[type="range"] { flex: 1; accent-color: var(--accent); }
+      .fav { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.7rem; border: 1px solid #8883; border-radius: 0.6rem; margin-bottom: 0.5rem; }
+      .fav .sym { font-weight: 600; cursor: pointer; }
+      .fav .px { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.15; }
+      .fav .px .chg { font-size: 0.72rem; }
+      .fav .iconbtn { flex: 0 0 auto; width: auto; padding: 0.3rem 0.5rem; background: #8882; color: inherit; font-weight: 600; }
+      .up { color: #16a34a; } .down { color: #dc2626; }
+      .gai { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: inherit; margin: 0.2rem 0; }
+      .gai input { width: auto; }
+      .statgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.8rem; }
+      .stat { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.6rem; text-align: center; }
+      .stat .k { font-size: 0.72rem; color: #888; }
+      .stat .v { font-weight: 700; font-size: 1.05rem; margin-top: 0.15rem; }
+      .verdict { margin-top: 0.6rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: #8881; font-weight: 600; text-align: center; }
+      .trade { display: flex; gap: 0.5rem; align-items: center; padding: 0.35rem 0; border-bottom: 1px solid #8881; font-size: 0.82rem; }
+      .trade:last-child { border-bottom: 0; }
+      .trade .tside { font-weight: 700; text-transform: uppercase; }
+      .trade .tpnl { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+      .grun { border: 1px solid #8883; border-radius: 0.6rem; padding: 0.5rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.82rem; display: flex; gap: 0.5rem; align-items: center; }
+      .grun .gp { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="appbar">
+        <h1>Aliza</h1>
+        <span class="spacer"></span>
+        <span class="who hidden" id="who"></span>
+        <button class="ghost hidden" id="logout" style="flex:0 0 auto;width:auto;padding:0.35rem 0.7rem">Log out</button>
+      </div>
+
+      <div class="nav hidden" id="nav">
+        <button data-view="orders" class="on">Orders</button>
+        <button data-view="history">History</button>
+        <button data-view="settings">Settings</button>
+      </div>
+
+      <!-- LOGIN -->
+      <section id="view-login">
+        <p>Trade Binance Futures from one place. Telegram is the backend.</p>
+        <div class="card">
+          <div id="tgLogin" class="hidden">
+            <strong>Log in with Telegram</strong>
+            <p style="margin:0.3rem 0 0.6rem">One click — same account as the bot.</p>
+            <div id="tgWidget"></div>
+            <div class="msg" id="tgMsg"></div>
+            <details style="margin-top:0.6rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Or use a username &amp; password</summary><div id="pwBox"></div></details>
+          </div>
+          <div id="pwForm">
+            <strong>Register / Log in</strong>
+            <label for="username">Username</label>
+            <input id="username" autocomplete="username" />
+            <label for="password">Password (min 8 chars)</label>
+            <input id="password" type="password" autocomplete="current-password" />
+            <div class="actions">
+              <button class="primary" id="register">Register</button>
+              <button class="ghost" id="login">Log in</button>
+            </div>
+            <div class="msg" id="msg"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ORDERS -->
+      <section id="view-orders" class="hidden">
+        <div class="card">
+          <strong>Open position</strong>
+          <p style="margin:0.3rem 0 0.6rem">Pick a side, size and levels — you'll Confirm before anything places.</p>
+          <div class="ticket">
+            <div class="side">
+              <button type="button" class="long on" id="side-long">Long / Buy</button>
+              <button type="button" class="short" id="side-short">Short / Sell</button>
+            </div>
+            <div>
+              <label for="t-sym">Symbol</label>
+              <div class="cmdrow">
+                <input id="t-sym" placeholder="BTC" autocomplete="off" />
+                <button class="ghost" id="t-last" type="button" style="flex:0 0 auto;width:auto;white-space:nowrap">Last <span id="t-px">—</span></button>
+              </div>
+            </div>
+            <div>
+              <label>Leverage <span id="t-levval" style="color:inherit;font-weight:700">3x</span></label>
+              <div class="lev"><input type="range" id="t-lev" min="1" max="20" value="3" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="t-size">Size (USDT)</label><input id="t-size" inputmode="decimal" placeholder="100" autocomplete="off" /></div>
+              <div><label for="t-entry">Entry price</label><input id="t-entry" inputmode="decimal" placeholder="tap Last" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="t-sl">Stop loss</label><input id="t-sl" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
+              <div><label for="t-tp">Take profit</label><input id="t-tp" inputmode="decimal" placeholder="price" autocomplete="off" /></div>
+            </div>
+            <div class="chips">
+              <button class="chip" type="button" data-risk="1">SL/TP 1% / 2%</button>
+              <button class="chip" type="button" data-risk="2">2% / 4%</button>
+              <button class="chip" type="button" data-risk="5">5% / 10%</button>
+            </div>
+            <button class="primary" id="t-review" type="button">Review order</button>
+            <div class="msg" id="t-msg"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <strong>Goal — paper test on real data</strong>
+          <p style="margin:0.3rem 0 0.6rem">Set a profit goal; it runs your strategy over real Binance candles and shows the real stats. No orders are placed.</p>
+          <div class="ticket">
+            <div class="grid2">
+              <div><label for="g-profit">Profit target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
+              <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="g-risk">Max risk (% of capital)</label><input id="g-risk" inputmode="numeric" placeholder="30" value="30" autocomplete="off" /></div>
+              <div><label for="g-symbol">Symbol</label><input id="g-symbol" placeholder="BTC" value="BTC" autocomplete="off" /></div>
+            </div>
+            <div class="grid2">
+              <div><label for="g-strategy">Strategy</label><select id="g-strategy"><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option></select></div>
+              <div><label for="g-interval">Timeframe</label><select id="g-interval"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
+            </div>
+            <label class="gai"><input type="checkbox" id="g-ai" /> Let AI pick the side (per run)</label>
+            <button class="primary" id="g-run" type="button">Run goal</button>
+            <div class="msg" id="g-msg"></div>
+          </div>
+          <pre id="g-out" class="output hidden"></pre>
+          <div id="g-spark"></div>
+          <div id="g-stats" class="statgrid hidden"></div>
+          <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:#888;font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
+          <div id="g-history" style="margin-top:0.9rem"></div>
+        </div>
+
+        <div class="card">
+          <strong>Commands</strong>
+          <p style="margin:0.3rem 0 0.6rem">Market data, goals, backtest, close — trades ask to Confirm first.</p>
+          <div class="chips" style="margin-bottom:0.6rem">
+            <button class="chip" data-cmd="market BTC">market BTC</button>
+            <button class="chip" data-cmd="goal profit 10 risk 50">goal</button>
+            <button class="chip" data-cmd="backtest BTC">backtest BTC</button>
+            <button class="chip" data-cmd="close all">close all</button>
+            <button class="chip" data-cmd="help">help</button>
+          </div>
+          <div class="cmdrow">
+            <input id="cmd" placeholder="long BTC 3x entry 67500 sl 65000 tp 72000 size 100usdt" autocomplete="off" />
+            <button class="primary" id="cmd-run" style="flex:0 0 auto;width:5rem">Run</button>
+          </div>
+          <pre id="cmd-out" class="output"></pre>
+          <div id="cmd-spark"></div>
+          <div id="cmd-confirm" class="actions hidden">
+            <button class="primary" id="cmd-yes">Confirm</button>
+            <button class="ghost" id="cmd-no">Cancel</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <strong>Coins</strong>
+          <p style="margin:0.3rem 0 0.5rem">Search Binance Futures, star favourites, reorder, tap to view.</p>
+          <input id="coinSearch" placeholder="search e.g. SOL, PEPE…" autocomplete="off" />
+          <div id="coinResults" class="chips" style="margin-top:0.5rem"></div>
+          <div id="favs" style="margin-top:0.3rem"></div>
+        </div>
+
+        <div class="card">
+          <strong>Live positions</strong>
+          <div class="msg" id="stream-msg">Connecting…</div>
+          <div id="stream-feed"></div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section id="view-history" class="hidden">
+        <div class="card">
+          <strong>Performance</strong>
+          <div id="report">Loading…</div>
+        </div>
+        <div class="card">
+          <strong>By coin</strong>
+          <p style="margin:0.3rem 0 0.6rem">Which coins are working for you.</p>
+          <div id="bycoin">Loading…</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="view-settings" class="hidden">
+        <div class="card">
+          <strong>Binance API keys</strong>
+          <p style="margin:0.3rem 0 0.6rem">Add profiles (testnet, live) and pick the active one. Enable <b>Futures</b>, disable <b>Withdrawals</b>.</p>
+          <div id="profiles"></div>
+          <label for="profName">Add / update a profile</label>
+          <div class="cmdrow">
+            <input id="profName" placeholder="name (e.g. testnet)" autocomplete="off" />
+            <select id="profNet" style="flex:0 0 auto;width:7rem"><option value="true">testnet</option><option value="false">live</option></select>
+          </div>
+          <input id="apiKey" placeholder="API key" autocomplete="off" />
+          <input id="apiSecret" type="password" placeholder="API secret" autocomplete="off" />
+          <div class="actions"><button class="primary" id="saveKey">Save profile</button></div>
+          <div class="msg" id="keyMsg"></div>
+        </div>
+        <div class="card" id="status">Loading status…</div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      // Telegram Mini App handle — non-null only inside Telegram, where the
+      // launch sets a non-empty initData. On the plain website the SDK still
+      // loads but initData is "", so this stays null and the web flow runs.
+      const tgApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData ? window.Telegram.WebApp : null;
+      const inMiniApp = !!tgApp;
+      function applyTgTheme(tg) {
+        const tp = tg.themeParams || {};
+        if (tp.bg_color) document.body.style.background = tp.bg_color;
+        if (tp.text_color) document.body.style.color = tp.text_color;
+        if (tp.button_color) document.documentElement.style.setProperty("--accent", tp.button_color);
+        try { document.documentElement.style.colorScheme = tg.colorScheme || "dark"; } catch (_) {}
+        try { tg.setHeaderColor && tg.setHeaderColor(tp.bg_color || "#000000"); } catch (_) {}
+      }
+      function authHeaders() {
+        const t = localStorage.getItem("token");
+        return t ? { Authorization: "Bearer " + t, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+      }
+      function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+      // ---- views / nav / url routing ----
+      function pathView() {
+        const p = location.pathname.replace(/\/+$/, "");
+        if (p === "/history") return "history";
+        if (p === "/setting" || p === "/settings") return "settings";
+        if (p === "/order" || p === "/orders") return "orders";
+        return "orders";
+      }
+      function showView(name) {
+        ["orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
+        document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
+        if (name === "history") loadHistory();
+        if (tgApp && tgApp.BackButton) { name === "orders" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
+      }
+      function navigate(view) {
+        const path = "/" + (view === "orders" ? "orders" : view);
+        if (location.pathname !== path) history.pushState(null, "", path);
+        showView(view);
+      }
+      document.querySelectorAll("#nav button").forEach((b) => (b.onclick = () => navigate(b.dataset.view)));
+      window.onpopstate = () => { if (localStorage.getItem("token")) showView(pathView()); };
+
+      function setProfile(p) {
+        if (p) localStorage.setItem("profile", JSON.stringify(p));
+        const prof = JSON.parse(localStorage.getItem("profile") || "null");
+        if (!prof) return;
+        $("who").innerHTML = (prof.photo ? `<img src="${escapeHtml(prof.photo)}"/>` : "") + `<span>${escapeHtml(prof.name || "trader")}</span>`;
+        $("who").classList.remove("hidden");
+      }
+      function onAuthed(profile) {
+        if (profile) setProfile(profile); else setProfile();
+        $("nav").classList.remove("hidden");
+        $("logout").classList.remove("hidden");
+        showView(pathView());
+        refreshKeyStatus();
+        connectStream();
+        renderFavs();
+        startPricePolling();
+        loadGoalHistory();
+        loadStatus();
+      }
+      $("logout").onclick = () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("profile");
+        if (stream) { stream.close(); stream = null; }
+        stopPricePolling();
+        $("nav").classList.add("hidden");
+        $("logout").classList.add("hidden");
+        $("who").classList.add("hidden");
+        showView("login");
+      };
+
+      // ---- auth: password ----
+      function show(text, ok) { $("msg").textContent = text; $("msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      async function submit(path) {
+        try {
+          const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: $("username").value, password: $("password").value }) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) { localStorage.setItem("token", d.token); onAuthed({ name: d.username }); }
+          else show(d.error || `Failed (${r.status})`, false);
+        } catch (e) { show("Network error", false); }
+      }
+      $("register").onclick = () => submit("/api/register");
+      $("login").onclick = () => submit("/api/login");
+
+      // ---- auth: Telegram widget ----
+      window.onTelegramAuth = async (user) => {
+        try {
+          const r = await fetch("/api/telegram-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) { localStorage.setItem("token", d.token); onAuthed({ name: user.username || user.first_name, photo: user.photo_url }); }
+          else { $("tgMsg").textContent = d.error || "Login failed"; $("tgMsg").style.color = "#dc2626"; }
+        } catch (e) { $("tgMsg").textContent = "Network error"; }
+      };
+      fetch("/api/auth-config").then((r) => r.json()).then((cfg) => {
+        if (!cfg.telegram_login_enabled || !cfg.telegram_bot_username) return;
+        $("pwBox").appendChild($("pwForm"));
+        $("tgLogin").classList.remove("hidden");
+        const s = document.createElement("script");
+        s.async = true; s.src = "https://telegram.org/js/telegram-widget.js?22";
+        s.setAttribute("data-telegram-login", cfg.telegram_bot_username);
+        s.setAttribute("data-size", "large");
+        s.setAttribute("data-onauth", "onTelegramAuth(user)");
+        s.setAttribute("data-request-access", "write");
+        $("tgWidget").appendChild(s);
+      }).catch(() => {});
+
+      // ---- API key profiles ----
+      function keyMsg(t, ok) { $("keyMsg").textContent = t; $("keyMsg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      async function refreshKeyStatus() {
+        try {
+          const d = await (await fetch("/api/credentials", { headers: authHeaders() })).json();
+          const list = d.profiles || [];
+          const box = $("profiles");
+          if (!list.length) { box.innerHTML = '<p>No profiles yet — add one below.</p>'; return; }
+          box.innerHTML = list.map((p) => {
+            const net = p.testnet ? '<span class="badge">testnet</span>' : '<span class="badge live">live</span>';
+            const active = p.active ? '<span class="badge active">active</span>' : `<button class="ghost" data-active="${escapeHtml(p.profile)}">Make active</button>`;
+            return `<div class="profile"><span class="name">${escapeHtml(p.profile)}</span>${net}<span class="badge">${escapeHtml(p.api_key_tail || "set")}</span><span class="spacer"></span>${active} <button class="ghost" data-del="${escapeHtml(p.profile)}">Remove</button></div>`;
+          }).join("");
+          box.querySelectorAll("[data-active]").forEach((b) => (b.onclick = () => setActive(b.dataset.active)));
+          box.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => removeProfile(b.dataset.del)));
+        } catch (e) {}
+      }
+      async function setActive(profile) { await fetch("/api/credentials/active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ profile }) }); refreshKeyStatus(); }
+      async function removeProfile(profile) { await fetch("/api/credentials?profile=" + encodeURIComponent(profile), { method: "DELETE", headers: authHeaders() }); refreshKeyStatus(); }
+      $("saveKey").onclick = async () => {
+        const profile = $("profName").value.trim() || "default";
+        const r = await fetch("/api/credentials", { method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ profile, api_key: $("apiKey").value, api_secret: $("apiSecret").value, testnet: $("profNet").value === "true" }) });
+        const d = await r.json().catch(() => ({}));
+        keyMsg(r.ok ? `Saved profile "${profile}".` : d.error || "Failed", r.ok);
+        $("apiKey").value = ""; $("apiSecret").value = ""; refreshKeyStatus();
+      };
+
+      // ---- console ----
+      const cmdInput = $("cmd"), cmdOut = $("cmd-out"), cmdSpark = $("cmd-spark"), cmdConfirm = $("cmd-confirm");
+      let pendingConfirmId = null;
+      function sparkline(vals) {
+        if (!vals.length) return "";
+        const w = 280, h = 48, pad = 3, min = Math.min(0, ...vals), max = Math.max(0, ...vals), range = max - min || 1;
+        const y = (v) => h - pad - ((v - min) / range) * (h - 2 * pad);
+        const pts = vals.map((v, i) => `${(pad + (i / Math.max(1, vals.length - 1)) * (w - 2 * pad)).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+        const color = vals[vals.length - 1] >= 0 ? "#16a34a" : "#dc2626";
+        return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="margin-top:0.5rem"><line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="#8884" stroke-dasharray="3"/><polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
+      }
+      async function runCommand(command) {
+        if (!command.trim()) return;
+        cmdConfirm.classList.add("hidden"); cmdSpark.innerHTML = ""; pendingConfirmId = null; cmdOut.textContent = "…";
+        try {
+          const r = await fetch("/api/command", { method: "POST", headers: authHeaders(), body: JSON.stringify({ command }) });
+          const d = await r.json().catch(() => ({}));
+          cmdOut.textContent = d.output || d.error || `Failed (${r.status})`;
+          if (d.curve && d.curve.length) cmdSpark.innerHTML = sparkline(d.curve.map(Number));
+          if (d.confirm_id) { pendingConfirmId = d.confirm_id; cmdConfirm.classList.remove("hidden"); }
+        } catch (e) { cmdOut.textContent = "Network error"; }
+      }
+      async function resolveConfirm(cancel) {
+        if (!pendingConfirmId) return;
+        const id = pendingConfirmId; pendingConfirmId = null; cmdConfirm.classList.add("hidden");
+        cmdOut.textContent = cancel ? "Cancelling…" : "Placing…";
+        try {
+          const d = await (await fetch("/api/confirm", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id, cancel }) })).json();
+          cmdOut.textContent = d.output || d.error || "Failed";
+        } catch (e) { cmdOut.textContent = "Network error"; }
+      }
+      $("cmd-run").onclick = () => runCommand(cmdInput.value);
+      cmdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runCommand(cmdInput.value); });
+      $("cmd-yes").onclick = () => resolveConfirm(false);
+      $("cmd-no").onclick = () => resolveConfirm(true);
+      document.querySelectorAll(".chip[data-cmd]").forEach((c) => (c.onclick = () => { cmdInput.value = c.dataset.cmd; runCommand(c.dataset.cmd); }));
+
+      // ---- live prices ----
+      let priceCache = {}, priceTimer = null;
+      function normSym(v) { let s = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); if (!s) return ""; if (!s.endsWith("USDT")) s += "USDT"; return s; }
+      function formatPrice(v) { const n = Number(v); if (!isFinite(n)) return String(v); if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 1 }); if (n >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 3 }); return n.toPrecision(4); }
+      function trimNum(n) { return Number(Number(n).toPrecision(6)).toString(); }
+      async function loadPrices(symbols) {
+        const list = [...new Set(symbols.map(normSym).filter(Boolean))];
+        if (!list.length) return priceCache;
+        try {
+          const d = await (await fetch("/api/prices?symbols=" + encodeURIComponent(list.join(",")), { headers: authHeaders() })).json();
+          Object.assign(priceCache, d.prices || {});
+        } catch (_) {}
+        return priceCache;
+      }
+      function startPricePolling() {
+        if (priceTimer) return;
+        const tick = async () => { await loadPrices([...getFavs(), $("t-sym").value]); renderFavs(); updateTicketPrice(); };
+        tick();
+        priceTimer = setInterval(tick, 10000);
+      }
+      function stopPricePolling() { if (priceTimer) { clearInterval(priceTimer); priceTimer = null; } }
+
+      // ---- coins / favourites ----
+      function getFavs() { try { return JSON.parse(localStorage.getItem("favs") || "[]"); } catch (_) { return []; } }
+      function saveFavs(f) { localStorage.setItem("favs", JSON.stringify(f)); renderFavs(); loadPrices(f).then(renderFavs); }
+      function addFav(s) { const f = getFavs(); if (!f.includes(s)) { f.push(s); saveFavs(f); } }
+      function removeFav(s) { saveFavs(getFavs().filter((x) => x !== s)); }
+      function moveFav(i, d) { const f = getFavs(), j = i + d; if (j < 0 || j >= f.length) return; [f[i], f[j]] = [f[j], f[i]]; saveFavs(f); }
+      function renderFavs() {
+        const f = getFavs(), box = $("favs");
+        if (!box) return;
+        if (!f.length) { box.innerHTML = '<p style="font-size:0.85rem">No favourites yet — search above and tap ☆.</p>'; return; }
+        box.innerHTML = f.map((s, i) => {
+          const t = priceCache[normSym(s)];
+          const chg = t ? Number(t.price_change_pct) : null;
+          const cls = chg == null ? "" : chg >= 0 ? "up" : "down";
+          const chgTxt = chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
+          const px = t ? `<div>${formatPrice(t.last_price)}</div><div class="chg ${cls}">${chgTxt}</div>` : "<div>…</div>";
+          return `<div class="fav"><span class="sym" data-coin="${s}">${s}</span><span class="px">${px}</span><button class="iconbtn" data-up="${i}" title="Move up">↑</button><button class="iconbtn" data-down="${i}" title="Move down">↓</button><button class="iconbtn" data-rm="${s}" title="Remove">✕</button></div>`;
+        }).join("");
+        box.querySelectorAll("[data-coin]").forEach((b) => (b.onclick = () => loadIntoTicket(b.dataset.coin)));
+        box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.up, -1)));
+        box.querySelectorAll("[data-down]").forEach((b) => (b.onclick = () => moveFav(+b.dataset.down, 1)));
+        box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => removeFav(b.dataset.rm)));
+      }
+      let coinTimer = null;
+      $("coinSearch").addEventListener("input", (e) => {
+        clearTimeout(coinTimer); const q = e.target.value.trim();
+        coinTimer = setTimeout(async () => {
+          const d = await (await fetch("/api/symbols?q=" + encodeURIComponent(q), { headers: authHeaders() })).json();
+          const box = $("coinResults");
+          box.innerHTML = (d.symbols || []).slice(0, 16).map((s) => `<button class="chip" data-add="${s}">☆ ${s}</button>`).join("");
+          box.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => addFav(b.dataset.add)));
+        }, 250);
+      });
+
+      // ---- order ticket ----
+      let ticketSide = "long";
+      function ticketMsg(t, ok) { $("t-msg").textContent = t || ""; $("t-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function setSide(s) { ticketSide = s; $("side-long").classList.toggle("on", s === "long"); $("side-short").classList.toggle("on", s === "short"); }
+      function updateTicketPrice() {
+        const t = priceCache[normSym($("t-sym").value)];
+        if (!t) { $("t-px").textContent = "—"; return; }
+        const chg = Number(t.price_change_pct);
+        $("t-px").textContent = formatPrice(t.last_price) + (isFinite(chg) ? ` (${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%)` : "");
+      }
+      async function loadIntoTicket(coin) {
+        $("t-sym").value = String(coin).replace(/USDT$/, "");
+        navigate("orders");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        await loadPrices([coin]); updateTicketPrice();
+        const t = priceCache[normSym(coin)];
+        if (t && !$("t-entry").value) $("t-entry").value = trimNum(t.last_price);
+      }
+      $("side-long").onclick = () => setSide("long");
+      $("side-short").onclick = () => setSide("short");
+      $("t-lev").addEventListener("input", (e) => ($("t-levval").textContent = e.target.value + "x"));
+      let tSymTimer = null;
+      $("t-sym").addEventListener("input", () => {
+        clearTimeout(tSymTimer);
+        tSymTimer = setTimeout(async () => { if (normSym($("t-sym").value)) { await loadPrices([$("t-sym").value]); updateTicketPrice(); } }, 350);
+      });
+      $("t-last").onclick = async () => {
+        const sym = normSym($("t-sym").value); if (!sym) { ticketMsg("Enter a symbol first."); return; }
+        await loadPrices([sym]); const t = priceCache[sym];
+        if (t) { $("t-entry").value = trimNum(t.last_price); ticketMsg(""); } else ticketMsg("No price for that symbol.");
+        updateTicketPrice();
+      };
+      document.querySelectorAll("[data-risk]").forEach((b) => (b.onclick = async () => {
+        let entry = Number($("t-entry").value);
+        if (!entry) { const sym = normSym($("t-sym").value); await loadPrices([sym]); const t = priceCache[sym]; if (t) { entry = Number(t.last_price); $("t-entry").value = trimNum(entry); } }
+        if (!entry) { ticketMsg("Set an entry price (or tap Last) first."); return; }
+        const slPct = Number(b.dataset.risk) / 100, tpPct = slPct * 2;
+        if (ticketSide === "long") { $("t-sl").value = trimNum(entry * (1 - slPct)); $("t-tp").value = trimNum(entry * (1 + tpPct)); }
+        else { $("t-sl").value = trimNum(entry * (1 + slPct)); $("t-tp").value = trimNum(entry * (1 - tpPct)); }
+        ticketMsg("");
+      }));
+      $("t-review").onclick = async () => {
+        const sym = $("t-sym").value.trim(); if (!sym) return ticketMsg("Enter a symbol.");
+        const size = $("t-size").value.trim(); if (!size) return ticketMsg("Enter a size in USDT.");
+        let entry = $("t-entry").value.trim();
+        if (!entry) { await loadPrices([sym]); const t = priceCache[normSym(sym)]; if (t) entry = trimNum(t.last_price); }
+        if (!entry) return ticketMsg("Enter an entry price (or tap Last).");
+        const sl = $("t-sl").value.trim(), tp = $("t-tp").value.trim();
+        if (!sl || !tp) return ticketMsg("Enter stop loss and take profit (or tap a % preset).");
+        const cmd = `${ticketSide} ${sym} ${$("t-lev").value}x entry ${entry} sl ${sl} tp ${tp} size ${size}usdt`;
+        ticketMsg(""); cmdInput.value = cmd; runCommand(cmd);
+        $("cmd-out").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+
+      // ---- goal (paper backtest on real data) ----
+      function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "#16a34a" : "#dc2626"; }
+      function fmtPnl(v) { const n = Number(v) || 0; return (n >= 0 ? "+" : "") + (Math.round(n * 100) / 100); }
+      function verdictText(v) {
+        return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: max drawdown", max_trades: "⏹ Stopped: max trades", continue: "Ran out of history before a stop rule" })[v] || v || "";
+      }
+      function renderGoalResult(d) {
+        const st = d.stats || {};
+        $("g-out").textContent = d.output || ""; $("g-out").classList.remove("hidden");
+        $("g-spark").innerHTML = (d.curve && d.curve.length) ? sparkline(d.curve.map(Number)) : "";
+        const pnl = Number(st.realized_pnl || 0);
+        const cells = [
+          ["Trades", st.trades || 0], ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%"],
+          ["W / L", (st.wins || 0) + " / " + (st.losses || 0)], ["PnL", fmtPnl(pnl) + " USDT"],
+          ["Target", (st.profit_target || "0") + " USDT"], ["Risk", (st.risk_pct || 0) + "%"],
+        ];
+        $("g-stats").innerHTML = cells.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v ${k === "PnL" ? (pnl >= 0 ? "up" : "down") : ""}">${escapeHtml(String(v))}</div></div>`).join("")
+          + `<div class="verdict" style="grid-column:1/-1">${escapeHtml(verdictText(st.verdict))}</div>`;
+        $("g-stats").classList.remove("hidden");
+        const trades = d.trades || [];
+        $("g-trades").innerHTML = trades.length
+          ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:#888">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
+          : "<p style='font-size:0.85rem'>No trades.</p>";
+        $("g-tradeswrap").classList.toggle("hidden", trades.length === 0);
+        if (d.ai) goalMsg(d.ai, true);
+      }
+      async function runGoal() {
+        goalMsg("Running on real candles…", true);
+        $("g-run").disabled = true;
+        const body = {
+          profit: $("g-profit").value, capital: $("g-capital").value,
+          risk: parseInt($("g-risk").value, 10) || 30, symbol: $("g-symbol").value,
+          strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked,
+        };
+        try {
+          const r = await fetch("/api/goal/run", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
+          if (!d.ai) goalMsg("");
+          renderGoalResult(d); loadGoalHistory();
+        } catch (e) { goalMsg("Network error"); }
+        finally { $("g-run").disabled = false; }
+      }
+      $("g-run").onclick = runGoal;
+      async function loadGoalHistory() {
+        try {
+          const d = await (await fetch("/api/goal/history", { headers: authHeaders() })).json();
+          const runs = d.runs || [];
+          if (!runs.length) { $("g-history").innerHTML = ""; return; }
+          $("g-history").innerHTML = "<label>Recent runs</label>" + runs.slice(0, 8).map((x) => {
+            const pnl = Number(x.realized_pnl || 0);
+            return `<div class="grun"><span><b>${escapeHtml(x.symbol)}</b> ${escapeHtml(x.strategy)}${x.used_ai ? " · AI" : ""}</span><span style="color:#888">${Math.round(x.win_rate_pct || 0)}% · ${x.trades}t</span><span class="gp ${pnl >= 0 ? "up" : "down"}">${fmtPnl(pnl)}</span></div>`;
+          }).join("");
+        } catch (e) {}
+      }
+
+      // ---- history ----
+      async function loadHistory() {
+        try {
+          const d = await (await fetch("/api/history", { headers: authHeaders() })).json();
+          $("report").innerHTML = [
+            ["Trades", d.trades], ["Win rate", (d.win_rate ?? 0) + "%"], ["Total PnL", (d.total_pnl ?? 0) + " USDT"],
+            ["Wins / Losses", (d.wins ?? 0) + " / " + (d.losses ?? 0)], ["Expectancy", d.expectancy ?? 0],
+          ].map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join("");
+          const sym = d.by_symbol || {};
+          const keys = Object.keys(sym).sort((a, b) => Number(sym[b].total_pnl) - Number(sym[a].total_pnl));
+          $("bycoin").innerHTML = keys.length ? keys.map((s) => {
+            const g = sym[s], pos = Number(g.total_pnl) >= 0;
+            return `<div class="coincard"><div class="top"><span class="sym">${escapeHtml(s)}</span><span class="spacer" style="flex:1"></span><span class="pnl ${pos ? "pos" : "neg"}">${pos ? "+" : ""}${g.total_pnl} USDT</span></div><div class="sub"><span>Trades ${g.trades}</span><span>Win ${g.win_rate}%</span><span>${g.wins}W / ${g.losses}L</span></div></div>`;
+          }).join("") : '<p>No closed trades yet.</p>';
+        } catch (e) { $("report").textContent = "Could not load history."; $("bycoin").textContent = ""; }
+      }
+
+      // ---- live positions ----
+      let stream = null;
+      function streamShow(t, ok) { $("stream-msg").textContent = t; $("stream-msg").style.color = ok ? "#16a34a" : "#888"; }
+      function renderEvent(kind, e) {
+        let d = {}; try { d = JSON.parse(e.data); } catch (_) { return; }
+        const when = new Date(d.at || Date.now()).toLocaleTimeString();
+        const label = kind === "trade_closed" ? `closed · PnL ${d.realized_pnl} USDT` : `${d.side} ${d.amount} @ ${d.mark_price} · uPnL ${d.unrealized_pnl}`;
+        const row = document.createElement("div"); row.className = "row";
+        row.innerHTML = `<span>${when} · ${d.symbol}</span><strong>${label}</strong>`;
+        $("stream-feed").prepend(row);
+        while ($("stream-feed").childElementCount > 20) $("stream-feed").lastChild.remove();
+      }
+      function connectStream() {
+        const token = localStorage.getItem("token");
+        if (!token || stream) return;
+        stream = new EventSource("/api/stream?token=" + encodeURIComponent(token));
+        stream.onopen = () => streamShow("Watching live positions…", true);
+        stream.onerror = () => streamShow("No live feed yet (open a position, or enable testnet trading).", false);
+        stream.addEventListener("position_update", (e) => renderEvent("position_update", e));
+        stream.addEventListener("trade_closed", (e) => renderEvent("trade_closed", e));
+      }
+
+      // ---- status ----
+      async function loadStatus() {
+        try {
+          const d = await (await fetch("/readyz")).json();
+          $("status").innerHTML = "<strong>Status</strong>" + Object.entries(d).map(([k, v]) => `<div class="row"><span>${k}</span><strong>${v}</strong></div>`).join("");
+        } catch (e) {}
+      }
+
+      // ---- Telegram Mini App ----
+      async function tryMiniAppLogin() {
+        if (!inMiniApp) return false;
+        try {
+          const r = await fetch("/api/telegram-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ init_data: tgApp.initData }) });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.token) {
+            localStorage.setItem("token", d.token);
+            const u = (tgApp.initDataUnsafe && tgApp.initDataUnsafe.user) || {};
+            onAuthed({ name: u.username || u.first_name || "trader", photo: u.photo_url });
+            return true;
+          }
+          $("tgMsg").textContent = d.error || "Telegram login failed";
+        } catch (_) {}
+        return false;
+      }
+
+      // ---- boot ----
+      if (tgApp) {
+        try { tgApp.ready(); tgApp.expand(); } catch (_) {}
+        applyTgTheme(tgApp);
+        try { tgApp.onEvent && tgApp.onEvent("themeChanged", () => applyTgTheme(tgApp)); } catch (_) {}
+        try { tgApp.onEvent && tgApp.onEvent("backButtonClicked", () => history.back()); } catch (_) {}
+      }
+      if (localStorage.getItem("token")) onAuthed();
+      else tryMiniAppLogin().then((ok) => { if (!ok) showView("login"); });
+    </script>
+  </body>
+</html>

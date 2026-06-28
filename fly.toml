@@ -1,0 +1,56 @@
+# Fly.io config for the Telegram Binance Futures bot.
+# Two process groups share one image and one MongoDB Atlas database:
+#   worker -> /bin/worker : Telegram poller, no inbound port, single instance
+#   api    -> /bin/api    : HTTP server (health, TradingView webhook, dashboard)
+# App name must match the app created in the Fly dashboard / `fly launch`.
+app = "aliza-trading"
+primary_region = "sin" # Singapore: close to Binance + Thailand
+
+[build]
+
+# Non-secret config shared by every process. Safety flags pinned here so a
+# misconfigured deploy cannot silently enable real trading. Secrets go in
+# `fly secrets set` (shared across processes), never in this file.
+[env]
+  APP_ENV = "production"
+  TELEGRAM_MODE = "polling"
+  DRY_RUN = "true"
+  BINANCE_TESTNET = "true"
+  REAL_TRADING_ENABLED = "false"
+  LOG_LEVEL = "info"
+  MONGODB_DATABASE = "tradebot"
+  HTTP_ADDR = ":8080"
+
+[processes]
+  worker = "/bin/worker"
+  api = "/bin/api"
+
+# Inbound HTTP belongs to the api process only. auto_stop is off so the bot
+# never sleeps (a sleeping instance stops watching positions/alerts).
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ["api"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+# worker: single always-on machine. Telegram getUpdates allows only one
+# poller, so do NOT scale this past 1 instance.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["worker"]
+
+# api: HTTP server, free to scale horizontally later.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["api"]

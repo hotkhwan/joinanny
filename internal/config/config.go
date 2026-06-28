@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -8,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bottrade/internal/auth"
 )
 
 const (
@@ -36,6 +40,7 @@ type Config struct {
 	MongoDB     MongoDBConfig
 	Stripe      StripeConfig
 	S3          S3Config
+	Auth        AuthConfig
 }
 
 type AppConfig struct {
@@ -47,10 +52,24 @@ type AppConfig struct {
 	DefaultMarginMode  string
 	MaxLeverage        int
 	ConfirmationTTL    time.Duration
+	// Trailing stop policy, as percent-of-entry strings (e.g. "1" = 1%). Both
+	// must be positive to enable the trailing-stop monitor.
+	TrailActivatePct string
+	TrailGapPct      string
+	// Realtime position gateway: polls open positions and broadcasts updates /
+	// closes to the web SSE stream and Telegram. Runs only when a live exchange
+	// is available (not dry-run).
+	RealtimeEnabled     bool
+	RealtimePollSeconds int
+	// CampaignLiveEnabled is the explicit opt-in for autonomous campaign
+	// execution. It additionally requires testnet + real-trading-off + not
+	// dry-run at runtime, so it can never place live-account orders.
+	CampaignLiveEnabled bool
 }
 
 type TelegramConfig struct {
 	BotToken          string
+	BotUsername       string // @username (without @), used by the web Login Widget
 	AdminUserID       int64
 	AllowedUserIDs    []int64
 	Mode              string
@@ -62,6 +81,9 @@ type TelegramConfig struct {
 type HTTPConfig struct {
 	Addr    string
 	Enabled bool
+	// StatusToken gates the detailed /status endpoint. Empty disables /status
+	// entirely so trading config is never exposed unauthenticated.
+	StatusToken string
 }
 
 type BinanceConfig struct {
@@ -93,6 +115,34 @@ type AIConfig struct {
 	RequestTimeout       time.Duration
 	MinConfidencePercent int
 	AutoTradeEnabled     bool
+	// Ensemble (multi-AI panel). When Providers is non-empty the signal
+	// processor uses the panel instead of the single Provider above.
+	Providers        []AIProvider
+	EnsemblePolicy   string // "majority" | "consensus"
+	EnsembleMinVotes int
+	// Market-data enrichment: free Binance Futures order-flow (funding, open
+	// interest, long/short ratio, taker flow) injected into the AI prompt. Uses
+	// the production market-data host even on testnet (public, read-only).
+	MarketDataEnabled bool
+	MarketDataBaseURL string
+	MarketDataPeriod  string // sampling window for ratio endpoints, e.g. "5m"
+	KlineInterval     string // candle interval for EMA/RSI/MACD, e.g. "1h"
+	// Crypto Fear & Greed Index sentiment (free, key-less, market-wide).
+	FearGreedEnabled bool
+	FearGreedBaseURL string
+	// NewsAPI headlines (free tier, API key required). Registered only when a key
+	// is set.
+	NewsAPIKey  string
+	NewsBaseURL string
+}
+
+// AIProvider is one member of the AI ensemble, parsed from AI_PROVIDERS (JSON).
+type AIProvider struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"` // "anthropic" | "openai_compatible"
+	APIKey   string `json:"api_key"`
+	BaseURL  string `json:"base_url"`
+	Model    string `json:"model"`
 }
 
 type StripeConfig struct {
@@ -110,6 +160,19 @@ type S3Config struct {
 	SecretAccessKey string
 	ForcePathStyle  bool
 	Enabled         bool
+}
+
+// AuthConfig holds the master key used to encrypt per-user Binance credentials
+// at rest. Enabled is true once a key is provided; multi-tenant credential
+// storage stays off until then so the single-user flow is unaffected.
+type AuthConfig struct {
+	EncryptionKeyID string
+	EncryptionKey   []byte
+	Enabled         bool
+	// TokenSecret signs session JWTs (AUTH_JWT_SECRET, base64, >= 32 bytes).
+	// Empty disables session tokens (login still works but returns no token).
+	TokenSecret []byte
+	TokenTTL    time.Duration
 }
 
 type ValidationError struct {
@@ -153,8 +216,14 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.App.DefaultMarginMode = strings.ToLower(reader.string("DEFAULT_MARGIN_MODE", cfg.App.DefaultMarginMode))
 	cfg.App.MaxLeverage = reader.int("MAX_LEVERAGE", cfg.App.MaxLeverage)
 	cfg.App.ConfirmationTTL = reader.seconds("CONFIRMATION_TTL_SECONDS", cfg.App.ConfirmationTTL)
+	cfg.App.TrailActivatePct = reader.string("TRAIL_ACTIVATE_PCT", cfg.App.TrailActivatePct)
+	cfg.App.TrailGapPct = reader.string("TRAIL_GAP_PCT", cfg.App.TrailGapPct)
+	cfg.App.RealtimeEnabled = reader.bool("REALTIME_ENABLED", true)
+	cfg.App.RealtimePollSeconds = reader.int("REALTIME_POLL_SECONDS", cfg.App.RealtimePollSeconds)
+	cfg.App.CampaignLiveEnabled = reader.bool("CAMPAIGN_LIVE_ENABLED", false)
 
 	cfg.Telegram.BotToken = reader.string("TELEGRAM_BOT_TOKEN", cfg.Telegram.BotToken)
+	cfg.Telegram.BotUsername = strings.TrimPrefix(reader.string("TELEGRAM_BOT_USERNAME", cfg.Telegram.BotUsername), "@")
 	cfg.Telegram.AdminUserID = reader.userID("TELEGRAM_ADMIN_USER_ID")
 	if cfg.Telegram.AdminUserID == 0 {
 		cfg.Telegram.AdminUserID = reader.userID("TELEGRAM_ALLOWED_USER_ID")
@@ -170,6 +239,7 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 
 	cfg.HTTP.Addr = reader.string("HTTP_ADDR", cfg.HTTP.Addr)
 	cfg.HTTP.Enabled = reader.bool("HTTP_ENABLED", cfg.HTTP.Enabled)
+	cfg.HTTP.StatusToken = reader.string("HTTP_STATUS_TOKEN", cfg.HTTP.StatusToken)
 
 	cfg.Binance.APIKey = reader.string("BINANCE_API_KEY", cfg.Binance.APIKey)
 	cfg.Binance.APISecret = reader.string("BINANCE_API_SECRET", cfg.Binance.APISecret)
@@ -190,6 +260,20 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.AI.MinConfidencePercent = reader.int("AI_MIN_CONFIDENCE_PERCENT", cfg.AI.MinConfidencePercent)
 	cfg.AI.AutoTradeEnabled = reader.bool("AI_AUTOTRADE_ENABLED", cfg.AI.AutoTradeEnabled)
 	cfg.AI.Enabled = reader.bool("AI_ENABLED", cfg.AI.Provider != "disabled" || anySet(cfg.AI.APIKey, cfg.AI.Model))
+	cfg.AI.Providers = reader.aiProviders("AI_PROVIDERS")
+	cfg.AI.EnsemblePolicy = strings.ToLower(reader.string("AI_ENSEMBLE_POLICY", cfg.AI.EnsemblePolicy))
+	cfg.AI.EnsembleMinVotes = reader.int("AI_ENSEMBLE_MIN_VOTES", cfg.AI.EnsembleMinVotes)
+	if len(cfg.AI.Providers) > 0 {
+		cfg.AI.Enabled = true
+	}
+	cfg.AI.MarketDataBaseURL = reader.string("MARKETDATA_BASE_URL", cfg.AI.MarketDataBaseURL)
+	cfg.AI.MarketDataPeriod = reader.string("MARKETDATA_PERIOD", cfg.AI.MarketDataPeriod)
+	cfg.AI.KlineInterval = reader.string("MARKETDATA_KLINE_INTERVAL", cfg.AI.KlineInterval)
+	cfg.AI.MarketDataEnabled = reader.bool("MARKETDATA_ENABLED", cfg.AI.Enabled)
+	cfg.AI.FearGreedBaseURL = reader.string("FEAR_GREED_BASE_URL", cfg.AI.FearGreedBaseURL)
+	cfg.AI.FearGreedEnabled = reader.bool("FEAR_GREED_ENABLED", cfg.AI.MarketDataEnabled)
+	cfg.AI.NewsAPIKey = reader.string("NEWS_API_KEY", cfg.AI.NewsAPIKey)
+	cfg.AI.NewsBaseURL = reader.string("NEWS_API_BASE_URL", cfg.AI.NewsBaseURL)
 
 	cfg.MongoDB.URI = reader.string("MONGODB_URI", cfg.MongoDB.URI)
 	cfg.MongoDB.Database = reader.string("MONGODB_DATABASE", cfg.MongoDB.Database)
@@ -207,6 +291,12 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 	cfg.S3.ForcePathStyle = reader.bool("S3_FORCE_PATH_STYLE", cfg.S3.ForcePathStyle)
 	cfg.S3.Enabled = anySet(cfg.S3.Endpoint, cfg.S3.Region, cfg.S3.Bucket, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey)
 
+	cfg.Auth.EncryptionKeyID = reader.string("CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
+	cfg.Auth.EncryptionKey = reader.base64("CREDENTIAL_ENCRYPTION_KEY")
+	cfg.Auth.Enabled = len(cfg.Auth.EncryptionKey) > 0
+	cfg.Auth.TokenSecret = reader.base64("AUTH_JWT_SECRET")
+	cfg.Auth.TokenTTL = reader.seconds("AUTH_JWT_TTL_SECONDS", 24*time.Hour)
+
 	validate(cfg, &reader.problems)
 
 	if len(reader.problems) > 0 {
@@ -219,14 +309,15 @@ func LoadFromLookup(lookup LookupFunc) (Config, error) {
 func defaultConfig() Config {
 	return Config{
 		App: AppConfig{
-			Env:                "local",
-			LogLevel:           LogLevelInfo,
-			DryRun:             true,
-			RealTradingEnabled: false,
-			OrderSizingMode:    OrderSizingExplicit,
-			DefaultMarginMode:  MarginModeIsolated,
-			MaxLeverage:        20,
-			ConfirmationTTL:    300 * time.Second,
+			Env:                 "local",
+			LogLevel:            LogLevelInfo,
+			DryRun:              true,
+			RealTradingEnabled:  false,
+			OrderSizingMode:     OrderSizingExplicit,
+			DefaultMarginMode:   MarginModeIsolated,
+			MaxLeverage:         20,
+			ConfirmationTTL:     300 * time.Second,
+			RealtimePollSeconds: 3,
 		},
 		Telegram: TelegramConfig{
 			Mode:              TelegramModePolling,
@@ -249,6 +340,13 @@ func defaultConfig() Config {
 			BaseURL:              "https://api.openai.com/v1",
 			RequestTimeout:       20 * time.Second,
 			MinConfidencePercent: 70,
+			MarketDataBaseURL:    "https://fapi.binance.com",
+			MarketDataPeriod:     "5m",
+			KlineInterval:        "1h",
+			FearGreedBaseURL:     "https://api.alternative.me",
+		},
+		Auth: AuthConfig{
+			EncryptionKeyID: "v1",
 		},
 	}
 }
@@ -344,13 +442,28 @@ func validate(cfg Config, problems *[]string) {
 	}
 
 	if cfg.AI.Enabled {
-		if cfg.AI.Provider != "openai_compatible" {
-			addProblem(problems, "AI_PROVIDER must be disabled or openai_compatible")
-		}
-		requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
-		requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
-		if !validHTTPURL(cfg.AI.BaseURL) {
-			addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+		if len(cfg.AI.Providers) > 0 {
+			// Ensemble mode: validate each panel member instead of the single
+			// AI_PROVIDER block.
+			for i, provider := range cfg.AI.Providers {
+				if provider.Provider != "anthropic" && provider.Provider != "openai_compatible" {
+					addProblem(problems, fmt.Sprintf("AI_PROVIDERS[%d].provider must be anthropic or openai_compatible", i))
+				}
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].api_key", i), provider.APIKey)
+				requireNonEmpty(problems, fmt.Sprintf("AI_PROVIDERS[%d].model", i), provider.Model)
+			}
+			if !oneOf(cfg.AI.EnsemblePolicy, "", "majority", "consensus") {
+				addProblem(problems, "AI_ENSEMBLE_POLICY must be majority or consensus")
+			}
+		} else {
+			if cfg.AI.Provider != "openai_compatible" && cfg.AI.Provider != "anthropic" {
+				addProblem(problems, "AI_PROVIDER must be disabled, openai_compatible, or anthropic")
+			}
+			requireNonEmpty(problems, "AI_API_KEY", cfg.AI.APIKey)
+			requireNonEmpty(problems, "AI_MODEL", cfg.AI.Model)
+			if !validHTTPURL(cfg.AI.BaseURL) {
+				addProblem(problems, "AI_BASE_URL must be a valid http or https URL")
+			}
 		}
 		if cfg.AI.RequestTimeout <= 0 {
 			addProblem(problems, "AI_REQUEST_TIMEOUT_SECONDS must be greater than 0")
@@ -377,6 +490,16 @@ func validate(cfg Config, problems *[]string) {
 		requireNonEmpty(problems, "S3_BUCKET", cfg.S3.Bucket)
 		requireNonEmpty(problems, "S3_ACCESS_KEY_ID", cfg.S3.AccessKeyID)
 		requireNonEmpty(problems, "S3_SECRET_ACCESS_KEY", cfg.S3.SecretAccessKey)
+	}
+
+	if cfg.Auth.Enabled {
+		if len(cfg.Auth.EncryptionKey) != auth.KeySize {
+			addProblem(problems, fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY must decode (base64) to exactly %d bytes for AES-256", auth.KeySize))
+		}
+		requireNonEmpty(problems, "CREDENTIAL_ENCRYPTION_KEY_ID", cfg.Auth.EncryptionKeyID)
+	}
+	if len(cfg.Auth.TokenSecret) > 0 && len(cfg.Auth.TokenSecret) < auth.MinSecretSize {
+		addProblem(problems, fmt.Sprintf("AUTH_JWT_SECRET must decode (base64) to at least %d bytes", auth.MinSecretSize))
 	}
 }
 
@@ -437,6 +560,34 @@ func (r *envReader) seconds(name string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Second
+}
+
+func (r *envReader) aiProviders(name string) []AIProvider {
+	raw, ok := r.lookup(name)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var providers []AIProvider
+	if err := json.Unmarshal([]byte(raw), &providers); err != nil {
+		r.add("%s must be a JSON array of {name,provider,api_key,base_url,model}", name)
+		return nil
+	}
+	return providers
+}
+
+func (r *envReader) base64(name string) []byte {
+	raw, ok := r.lookup(name)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		r.add("%s must be valid base64", name)
+		return nil
+	}
+
+	return decoded
 }
 
 func (r *envReader) userID(name string) int64 {

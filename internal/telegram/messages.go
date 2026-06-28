@@ -17,6 +17,21 @@ Status:
 /status
 status
 
+Market data (free Binance order-flow the AI reads):
+/market BTC
+/market ETHUSDT
+
+Backtest a strategy on history (offline, no risk):
+/backtest BTC
+
+Profit goal — preview the plan (simulation, no real orders):
+/goal profit 10 risk 50          (capital defaults to 100)
+/goal profit 10 capital 100 risk 50 winrate 60
+
+Autonomous campaign (testnet, gated):
+/campaign start profit 10 risk 50 symbol BTC
+/campaign stop
+
 Phase 2 management:
 be BTC
 move sl BTC to be

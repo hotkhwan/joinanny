@@ -7,8 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"bottrade/internal/backtest"
+	"bottrade/internal/campaign"
+	"bottrade/internal/campaignexec"
 	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
+	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/parser"
 	"bottrade/internal/plans"
@@ -30,7 +34,50 @@ type Handler struct {
 	orderService  *orders.Service
 	statusService *orders.StatusService
 	planService   *plans.Service
+	marketData    marketdata.Provider
+	marketPeriod  string
+	klines        klineSource
+	campaigns     *campaignexec.Manager
 	logger        *slog.Logger
+}
+
+// WithCampaigns enables the /campaign command (autonomous testnet campaigns).
+// When unset, /campaign reports that it is unavailable.
+func (h *Handler) WithCampaigns(manager *campaignexec.Manager) *Handler {
+	h.campaigns = manager
+	return h
+}
+
+// botNotifier sends campaign progress to a chat in the background. The Sender
+// (the bot) outlives any single update, so a captured reference stays valid.
+type botNotifier struct {
+	sender Sender
+	chatID int64
+}
+
+func (n botNotifier) Notify(text string) {
+	_, _ = n.sender.SendMessage(context.Background(), &tgbot.SendMessageParams{ChatID: n.chatID, Text: text})
+}
+
+// klineSource provides historical closes for the /backtest command.
+type klineSource interface {
+	Closes(ctx context.Context, symbol, interval string, limit int) ([]float64, error)
+}
+
+// WithMarketData attaches a market-data provider so the /market command can
+// report live Binance order-flow (funding, OI, long/short, taker). If the
+// provider also supplies klines, it enables /backtest too. Returns the handler
+// for chaining. When unset, /market and /backtest reply that they are unavailable.
+func (h *Handler) WithMarketData(provider marketdata.Provider, period string) *Handler {
+	if strings.TrimSpace(period) == "" {
+		period = "5m"
+	}
+	h.marketData = provider
+	h.marketPeriod = period
+	if ks, ok := provider.(klineSource); ok {
+		h.klines = ks
+	}
+	return h
 }
 
 func NewHandler(adminUserID int64, allowedUserIDs []int64, logger *slog.Logger) *Handler {
@@ -112,6 +159,14 @@ func (h *Handler) Handle(ctx context.Context, sender Sender, update *models.Upda
 		return h.sendText(ctx, sender, message.Chat.ID, HelpText)
 	case "/status":
 		return h.sendStatus(ctx, sender, message.Chat.ID)
+	case "/market":
+		return h.sendMarket(ctx, sender, message.Chat.ID, commandArg(text))
+	case "/backtest":
+		return h.sendBacktest(ctx, sender, message.Chat.ID, commandArg(text))
+	case "/goal":
+		return h.sendGoal(ctx, sender, message.Chat.ID, text)
+	case "/campaign":
+		return h.handleCampaign(sender, message.Chat.ID, userID, text)
 	}
 
 	intent, err := h.parser.Parse(text)
@@ -243,6 +298,194 @@ func commandName(text string) string {
 	}
 
 	return first
+}
+
+// commandArg returns the first argument after the command word, or "".
+func commandArg(text string) string {
+	_, rest, found := strings.Cut(strings.TrimSpace(text), " ")
+	if !found {
+		return ""
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+	return strings.TrimSpace(first)
+}
+
+// marketSymbol normalises a /market argument into a Binance symbol, defaulting
+// to BTCUSDT and appending USDT when only the base asset is given.
+func marketSymbol(arg string) string {
+	value := strings.ToUpper(strings.TrimSpace(arg))
+	value = strings.ReplaceAll(value, "/", "")
+	if value == "" {
+		return "BTCUSDT"
+	}
+	if !strings.HasSuffix(value, "USDT") {
+		value += "USDT"
+	}
+	return value
+}
+
+func (h *Handler) sendMarket(ctx context.Context, sender Sender, chatID int64, arg string) error {
+	if h.marketData == nil {
+		return h.sendText(ctx, sender, chatID, "Market data is not configured.")
+	}
+	symbol := marketSymbol(arg)
+	snapshot, err := marketdata.Collect(ctx, h.marketData, symbol, h.marketPeriod, time.Now().UTC())
+	if err != nil && snapshot.Funding.MarkPrice.IsZero() && snapshot.OpenInterest.OpenInterest.IsZero() &&
+		snapshot.LongShort.Ratio.IsZero() && snapshot.Taker.BuySellRatio.IsZero() {
+		h.logger.Warn("market data fetch failed", "symbol", symbol, "error", err)
+		return h.sendText(ctx, sender, chatID, "Could not fetch market data for "+symbol+".")
+	}
+	return h.sendText(ctx, sender, chatID, formatMarketSnapshot(snapshot))
+}
+
+const goalUsage = "Set a profit goal and preview the plan (simulation — no real orders):\n" +
+	"/goal profit 10 capital 100\n" +
+	"Optional: winrate 55 reward 2 risk 1 maxtrades 50 drawdown 30"
+
+const campaignUsage = "Autonomous campaign (testnet):\n" +
+	"/campaign start profit 10 capital 100 symbol BTC\n" +
+	"/campaign stop"
+
+// handleCampaign starts or stops an autonomous campaign. Starting is heavily
+// gated by the manager (testnet only, real trading off, explicit opt-in); this
+// handler just parses the request and reports refusals.
+func (h *Handler) handleCampaign(sender Sender, chatID, userID int64, text string) error {
+	bg := context.Background()
+	if h.campaigns == nil {
+		return h.sendText(bg, sender, chatID, "Autonomous campaigns are not enabled on this deployment.")
+	}
+
+	switch strings.ToLower(commandArg(text)) {
+	case "stop":
+		if h.campaigns.Stop(userID) {
+			return h.sendText(bg, sender, chatID, "⏹ Stopping your campaign after the current trade resolves…")
+		}
+		return h.sendText(bg, sender, chatID, "No campaign is running.")
+	case "start":
+		goal, err := campaign.ParseGoal(text)
+		if err != nil {
+			return h.sendText(bg, sender, chatID, err.Error()+"\n\n"+campaignUsage)
+		}
+		if _, err := campaign.EstimateTrades(goal); err != nil {
+			return h.sendText(bg, sender, chatID, "⚠️ "+err.Error())
+		}
+		symbol := marketSymbol(symbolArg(text))
+		if err := h.campaigns.Start(userID, symbol, goal, botNotifier{sender: sender, chatID: chatID}); err != nil {
+			return h.sendText(bg, sender, chatID, "⚠️ "+err.Error())
+		}
+		return nil // the manager sends the "started" message
+	default:
+		return h.sendText(bg, sender, chatID, campaignUsage)
+	}
+}
+
+// symbolArg extracts the value after a "symbol" token, or "".
+func symbolArg(text string) string {
+	tokens := strings.Fields(text)
+	for i, tok := range tokens {
+		if strings.EqualFold(tok, "symbol") && i+1 < len(tokens) {
+			return tokens[i+1]
+		}
+	}
+	return ""
+}
+
+func (h *Handler) sendGoal(ctx context.Context, sender Sender, chatID int64, text string) error {
+	goal, err := campaign.ParseGoal(text)
+	if err != nil {
+		return h.sendText(ctx, sender, chatID, err.Error()+"\n\n"+goalUsage)
+	}
+
+	// Feasibility: a goal with no positive expectancy can never reach its target.
+	estimate, err := campaign.EstimateTrades(goal)
+	if err != nil {
+		return h.sendText(ctx, sender, chatID, "⚠️ "+err.Error())
+	}
+
+	result := campaign.Simulate(goal)
+	return h.sendText(ctx, sender, chatID, formatGoal(goal, estimate, result))
+}
+
+// parseGoal reads a goal from "/goal profit 10 capital 100 ..." with sensible
+// defaults derived from capital. Target profit is required.
+func formatGoal(goal campaign.Goal, estimate int, result campaign.SimulationResult) string {
+	wins := 0
+	for _, o := range result.Outcomes {
+		if o.Win {
+			wins++
+		}
+	}
+	verdictText := map[campaign.Verdict]string{
+		campaign.StopTargetReached: "🎯 target reached",
+		campaign.StopMaxDrawdown:   "🛑 stopped: max drawdown",
+		campaign.StopMaxTrades:     "⏹ stopped: max trades",
+	}[result.Verdict]
+	if verdictText == "" {
+		verdictText = string(result.Verdict)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "🎯 Goal: make %s USDT from %s USDT capital\n", goal.TargetProfitUSDT.String(), goal.CapitalUSDT.String())
+	fmt.Fprintf(&b, "Risk: up to %d%% of capital (stop at -%s USDT), assumed win-rate %d%%\n",
+		goal.RiskPercent(), goal.MaxDrawdownUSDT.String(), goal.AssumedWinRate)
+	fmt.Fprintf(&b, "Expectancy: %s USDT/trade → ~%d trades needed\n\n", goal.ExpectedPerTrade().String(), estimate)
+	fmt.Fprintf(&b, "📊 Simulation (no real orders): %s\n", verdictText)
+	fmt.Fprintf(&b, "Trades: %d (%d win / %d loss) · Final PnL: %s USDT\n",
+		result.State.TradesClosed, wins, result.State.TradesClosed-wins, result.State.RealizedPnL.String())
+	b.WriteString("\n⚠️ This is a planning preview. Autonomous live execution is gated until testnet-validated; for now place trades yourself with [Confirm].")
+	return b.String()
+}
+
+func (h *Handler) sendBacktest(ctx context.Context, sender Sender, chatID int64, arg string) error {
+	if h.klines == nil {
+		return h.sendText(ctx, sender, chatID, "Backtesting is not configured.")
+	}
+	symbol := marketSymbol(arg)
+	closes, err := h.klines.Closes(ctx, symbol, "1h", 500)
+	if err != nil {
+		h.logger.Warn("backtest klines fetch failed", "symbol", symbol, "error", err)
+		return h.sendText(ctx, sender, chatID, "Could not fetch history for "+symbol+".")
+	}
+
+	strategies := []backtest.Strategy{
+		backtest.EMACrossStrategy{Fast: 12, Slow: 26},
+		backtest.RSIReversionStrategy{Period: 14, Low: 30, High: 70},
+	}
+	cfg := backtest.Config{FeeRate: 0.0004}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "🧪 Backtest %s (1h, %d bars, fee 0.04%%/side)", symbol, len(closes))
+	for _, strategy := range strategies {
+		result, err := backtest.Run(closes, strategy, cfg)
+		if err != nil {
+			fmt.Fprintf(&b, "\n\n%s: %v", strategy.Name(), err)
+			continue
+		}
+		fmt.Fprintf(&b, "\n\n%s\nTrades: %d | Win rate: %.0f%%\nReturn: %.2f%% | Max DD: %.2f%%",
+			result.Strategy, result.Trades, result.WinRatePct, result.ReturnPct, result.MaxDrawdownPct)
+	}
+	b.WriteString("\n\nPast performance is not indicative of future results.")
+	return h.sendText(ctx, sender, chatID, b.String())
+}
+
+func formatMarketSnapshot(s marketdata.Snapshot) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "📊 %s market data (%s)", s.Symbol, s.Period)
+	if s.Funding.MarkPrice.IsPositive() {
+		fmt.Fprintf(&b, "\nMark price: %s", s.Funding.MarkPrice.String())
+		fmt.Fprintf(&b, "\nFunding rate: %s (per 8h)", s.Funding.LastFundingRate.String())
+	}
+	if s.OpenInterest.OpenInterest.IsPositive() {
+		fmt.Fprintf(&b, "\nOpen interest: %s", s.OpenInterest.OpenInterest.String())
+	}
+	if s.LongShort.Ratio.IsPositive() {
+		fmt.Fprintf(&b, "\nLong/Short accounts: %s (long %s / short %s)",
+			s.LongShort.Ratio.String(), s.LongShort.LongAccount.String(), s.LongShort.ShortAccount.String())
+	}
+	if s.Taker.BuySellRatio.IsPositive() {
+		fmt.Fprintf(&b, "\nTaker buy/sell: %s", s.Taker.BuySellRatio.String())
+	}
+	return b.String()
 }
 
 func confirmationKeyboard(id string) models.ReplyMarkup {

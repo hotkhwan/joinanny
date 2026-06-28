@@ -22,6 +22,17 @@ type Store struct {
 	orderIntents  *mongodriver.Collection
 	signals       *mongodriver.Collection
 	auditEvents   *mongodriver.Collection
+	users         *mongodriver.Collection
+	journalTrades *mongodriver.Collection
+	credentials   *mongodriver.Collection
+	goalRuns      *mongodriver.Collection
+}
+
+// GoalRunsCollection exposes the goal_runs collection so the app layer can wire
+// a paper-goal history store without this package depending on the transport
+// layer's record type.
+func (s *Store) GoalRunsCollection() *mongodriver.Collection {
+	return s.goalRuns
 }
 
 func Connect(ctx context.Context, cfg Config) (*Store, error) {
@@ -51,6 +62,10 @@ func Connect(ctx context.Context, cfg Config) (*Store, error) {
 		orderIntents:  db.Collection("order_intents"),
 		signals:       db.Collection("signals"),
 		auditEvents:   db.Collection("audit_events"),
+		users:         db.Collection("users"),
+		journalTrades: db.Collection("journal_trades"),
+		credentials:   db.Collection("binance_credentials"),
+		goalRuns:      db.Collection("goal_runs"),
 	}
 	if err := store.ensureIndexes(ctx); err != nil {
 		_ = client.Disconnect(ctx)
@@ -127,6 +142,27 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 		return fmt.Errorf("create order intent indexes: %w", err)
 	}
 
+	_, err = s.goalRuns.Indexes().CreateMany(ctx, []mongodriver.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "user_key", Value: 1},
+				{Key: "created_at", Value: -1},
+			},
+			Options: options.Index().SetName("goalrun_user_created_at"),
+		},
+		{
+			// Paper runs are experimental stats, not records of truth — expire
+			// them after 90 days so the collection cannot grow unbounded.
+			Keys: bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().
+				SetName("goalrun_created_at_ttl").
+				SetExpireAfterSeconds(90 * 24 * 60 * 60),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create goal run indexes: %w", err)
+	}
+
 	_, err = s.signals.Indexes().CreateMany(ctx, []mongodriver.IndexModel{
 		{
 			Keys: bson.D{
@@ -162,6 +198,42 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("create audit indexes: %w", err)
+	}
+
+	_, err = s.users.Indexes().CreateOne(ctx, mongodriver.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetName("username_unique").SetUnique(true),
+	})
+	if err != nil {
+		return fmt.Errorf("create user indexes: %w", err)
+	}
+
+	_, err = s.journalTrades.Indexes().CreateMany(ctx, []mongodriver.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "user_id", Value: 1},
+				{Key: "closed_at", Value: -1},
+			},
+			Options: options.Index().SetName("journal_user_closed_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "campaign_id", Value: 1}},
+			Options: options.Index().SetName("journal_campaign").SetSparse(true),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create journal indexes: %w", err)
+	}
+
+	// Multi-profile: uniqueness is now per (user_id, profile). Drop the old
+	// user_id-only unique index if it exists (best-effort, ignore "not found").
+	_ = s.credentials.Indexes().DropOne(ctx, "credential_user_unique")
+	_, err = s.credentials.Indexes().CreateOne(ctx, mongodriver.IndexModel{
+		Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "profile", Value: 1}},
+		Options: options.Index().SetName("credential_user_profile_unique").SetUnique(true),
+	})
+	if err != nil {
+		return fmt.Errorf("create credential indexes: %w", err)
 	}
 
 	return nil

@@ -15,8 +15,18 @@ import (
 
 const defaultSystemPrompt = `You are a trading decision engine for a Binance Futures testnet bot.
 Return only JSON. Prefer hold when the signal is weak or incomplete.
-Never invent missing prices. Any open decision must include symbol, side, leverage, entry, stop_loss, take_profit, and either size_usdt or qty.
+Weigh any multi-source market context (narrative, on-chain, order flow, risk) but never invent missing prices or data.
+Favour fewer false signals: a confident hold beats a low-conviction open.
+Any open decision must include symbol, side, leverage, entry, stop_loss, take_profit, and either size_usdt or qty.
+Set confidence_percent to reflect how strongly the combined evidence supports the action.
 Use conservative leverage and explain the technical reason briefly.`
+
+// ContextEnricher gathers multi-source market context for a signal before the
+// model decides. *Aggregator implements it. When nil, the advisor falls back to
+// deciding from the raw signal alone.
+type ContextEnricher interface {
+	Gather(ctx context.Context, signal signals.MarketSignal) MarketContext
+}
 
 type OpenAICompatibleConfig struct {
 	APIKey         string
@@ -25,6 +35,7 @@ type OpenAICompatibleConfig struct {
 	SystemPrompt   string
 	RequestTimeout time.Duration
 	HTTPClient     *http.Client
+	Enricher       ContextEnricher
 }
 
 type OpenAICompatibleAdvisor struct {
@@ -59,11 +70,18 @@ func (a *OpenAICompatibleAdvisor) Decide(ctx context.Context, signal signals.Mar
 		return signals.Decision{}, fmt.Errorf("AI_MODEL is required")
 	}
 
+	userContent := signalPrompt(signal)
+	if a.cfg.Enricher != nil {
+		if block := a.cfg.Enricher.Gather(ctx, signal).Prompt(); block != "" {
+			userContent = block + "\n\n" + userContent
+		}
+	}
+
 	payload := chatCompletionRequest{
 		Model: a.cfg.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: a.cfg.SystemPrompt},
-			{Role: "user", Content: signalPrompt(signal)},
+			{Role: "user", Content: userContent},
 		},
 		Temperature: 0.1,
 		ResponseFormat: map[string]string{
