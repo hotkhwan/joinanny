@@ -24,3 +24,8 @@ tmp/
 Thumbs.db
 .vscode/
 .idea/
+
+# private keys / secret exports
+*.pem
+*.key
+*.p12
