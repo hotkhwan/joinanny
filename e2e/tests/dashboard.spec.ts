@@ -81,6 +81,23 @@ test("malformed trade surfaces the parser's specific guidance", async ({ page })
   await expect(page.locator("#cmd-out")).not.toContainText("Unknown command");
 });
 
+test("flight recorder logs the paper run, labeled and hashed", async ({ page }) => {
+  await registerAndLogin(page);
+  await gotoTrade(page);
+  await page.fill("#g-profit", "5");
+  await page.fill("#g-symbol", "BTC");
+  await page.click("#g-run");
+  await expect(page.locator("#g-stats")).toBeVisible({ timeout: 20_000 });
+
+  await page.click('#nav button[data-view="history"]');
+  await expect(page.locator("#view-history")).toBeVisible();
+  // The run shows up in the Flight Recorder, tagged PAPER, with a Merkle root.
+  await expect(page.locator("#rec-feed")).toContainText("BTCUSDT");
+  await expect(page.locator("#rec-feed .flag.paper").first()).toBeVisible();
+  await expect(page.locator("#rec-merkle")).toContainText("Merkle root");
+  await expect(page.locator("#rec-stats")).toContainText("Paper runs");
+});
+
 test("goal run with AI toggle falls back gracefully (no key configured)", async ({ page }) => {
   await registerAndLogin(page);
   await gotoTrade(page);

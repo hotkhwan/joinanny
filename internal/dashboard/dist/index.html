@@ -203,6 +203,17 @@
       .aicard .asub b { font-family: var(--font-mono); color: var(--text); font-weight: 600; }
       .cta { width: 100%; margin-top: 1rem; padding: 0.9rem; font-size: 1.02rem; font-family: var(--font-head); }
 
+      .merkle { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); word-break: break-all; margin: 0.7rem 0; padding: 0.5rem 0.65rem; border: 1px dashed var(--card-border); border-radius: 0.5rem; }
+      .merkle b { color: var(--primary); }
+      .flight { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0 0.1rem; font-size: 0.84rem; }
+      .flag { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; padding: 0.12rem 0.45rem; border-radius: 999px; letter-spacing: 0.04em; flex: 0 0 auto; }
+      .flag.live { background: rgba(0, 255, 153, 0.15); color: var(--profit); }
+      .flag.testnet { background: rgba(0, 245, 255, 0.15); color: var(--primary); }
+      .flag.paper { background: rgba(148, 163, 184, 0.18); color: var(--muted); }
+      .flight .fsym { font-weight: 700; }
+      .flight .fpnl { margin-left: auto; font-family: var(--font-mono); font-weight: 600; }
+      .fhash { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); padding-bottom: 0.5rem; border-bottom: 1px solid #ffffff14; }
+      .fhash:last-child { border-bottom: 0; }
       .hidden { display: none; }
     </style>
   </head>
@@ -276,6 +287,11 @@
           </div>
         </div>
         <button class="primary cta" id="home-start" type="button">Start Trading →</button>
+        <div class="card" style="text-align:center">
+          <div style="font-family:var(--font-head);font-weight:600">Every trade. Every result. Nothing hidden.</div>
+          <p style="margin:0.35rem 0 0.7rem">ANNY logs every decision — hashed and timestamped, never rewritten.</p>
+          <button class="ghost" id="home-recorder" type="button" style="width:100%">🛰 View Flight Recorder</button>
+        </div>
       </section>
 
       <!-- LOGIN -->
@@ -410,6 +426,13 @@
       <!-- HISTORY -->
       <section id="view-history" class="hidden">
         <div class="card">
+          <strong>🛰 Flight Recorder</strong>
+          <p style="margin:0.3rem 0 0.6rem">Every decision ANNY made for you — logged, hashed, never rewritten.</p>
+          <div id="rec-stats" class="statgrid"></div>
+          <div id="rec-merkle" class="merkle"></div>
+          <div id="rec-feed">Loading…</div>
+        </div>
+        <div class="card">
           <strong>Performance</strong>
           <div id="report">Loading…</div>
         </div>
@@ -452,7 +475,7 @@
       </button>
       <button data-view="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
-        History
+        Recorder
       </button>
       <button data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.3-1.3L14 3h-4l-.3 2.2A7 7 0 0 0 7.4 6.5l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.3 1.3L10 21h4l.3-2.2a7 7 0 0 0 2.3-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z"/></svg>
@@ -491,7 +514,7 @@
         ["home", "orders", "history", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
         if (name === "home") loadHome();
-        if (name === "history") loadHistory();
+        if (name === "history") { loadRecorder(); loadHistory(); }
         if (tgApp && tgApp.BackButton) { name === "home" || name === "login" ? tgApp.BackButton.hide() : tgApp.BackButton.show(); }
       }
       function navigate(view) {
@@ -550,6 +573,7 @@
         showView("login");
       };
       $("home-start").onclick = () => navigate("orders");
+      $("home-recorder").onclick = () => navigate("history");
 
       // ---- home KPIs (real data only) ----
       async function loadHome() {
@@ -854,6 +878,30 @@
             return `<div class="grun"><span><b>${escapeHtml(x.symbol)}</b> ${escapeHtml(x.strategy)}${x.used_ai ? " · AI" : ""}</span><span style="color:var(--muted)">${Math.round(x.win_rate_pct || 0)}% · ${x.trades}t</span><span class="gp ${pnl >= 0 ? "up" : "down"}">${fmtPnl(pnl)}</span></div>`;
           }).join("");
         } catch (e) {}
+      }
+
+      // ---- flight recorder (transparency feed) ----
+      async function loadRecorder() {
+        try {
+          const d = await (await fetch("/api/recorder", { headers: authHeaders() })).json();
+          const st = d.stats || {};
+          const since = st.since ? new Date(st.since).toLocaleDateString() : "—";
+          $("rec-stats").innerHTML = [
+            ["Live since", since], ["Real trades", st.real_trades || 0],
+            ["Win rate", Math.round(st.real_win_rate || 0) + "%"], ["Real PnL", fmtPnl(st.real_pnl) + " USDT"],
+            ["Paper runs", st.paper_runs || 0], ["Transparency", (st.transparency ?? 100) + "%"],
+          ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${escapeHtml(String(v))}</div></div>`).join("");
+          const root = d.merkle_root || "";
+          $("rec-merkle").innerHTML = root
+            ? `<b>Merkle root</b> ${escapeHtml(root.slice(0, 40))}…<br/><span title="${escapeHtml(d.anchor_note || "")}">⛓ ${d.anchored ? "anchored on-chain" : "anchors on-chain at launch"}</span>`
+            : "";
+          const feed = d.entries || [];
+          $("rec-feed").innerHTML = feed.length ? feed.map((e) => {
+            const when = new Date(e.at).toLocaleString();
+            const pnl = Number(e.pnl) || 0;
+            return `<div class="flight"><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span><span class="fsym">${escapeHtml(e.symbol)}</span><span style="color:#94A3B8">${escapeHtml(e.side || e.action)}</span><span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div><div class="fhash">${escapeHtml((e.hash || "").slice(0, 24))}… · ${escapeHtml(when)}</div>`;
+          }).join("") : "<p style='font-size:0.85rem;color:#94A3B8'>No flights recorded yet — ANNY logs every decision here. Run a goal, or start a testnet campaign, to begin your record.</p>";
+        } catch (e) { $("rec-feed").textContent = "Could not load the recorder."; }
       }
 
       // ---- history ----
