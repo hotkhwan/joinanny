@@ -226,6 +226,9 @@
       .lbname { font-weight: 600; }
       .lbstat { font-size: 0.76rem; color: var(--text); font-variant-numeric: tabular-nums; }
       .cedge { font-size: 0.66rem; font-weight: 700; color: var(--amber); background: rgba(245, 165, 36, 0.14); padding: 0.05rem 0.35rem; border-radius: 999px; }
+      .reco { background: linear-gradient(100deg, rgba(0, 245, 255, 0.1), rgba(255, 45, 130, 0.1)); border: 1px solid var(--card-border); border-radius: 0.6rem; padding: 0.55rem 0.7rem; margin-bottom: 0.6rem; font-size: 0.84rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+      .reco b { color: var(--primary); }
+      .reco button { width: auto; padding: 0.25rem 0.65rem; font-size: 0.78rem; margin-left: auto; }
       .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 22, 0.78); backdrop-filter: blur(4px); display: flex; align-items: flex-end; justify-content: center; }
       .overlay .sheet { width: 100%; max-width: 40rem; margin: 0 1rem; background: #0b1220; border: 1px solid var(--card-border); border-radius: 1rem 1rem 0 0; padding: 1rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom)); max-height: 86vh; overflow: auto; box-shadow: 0 -20px 60px -20px rgba(0, 0, 0, 0.9); }
       .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
@@ -339,6 +342,7 @@
         <div class="card">
           <strong>Goal — paper test on real data</strong>
           <p style="margin:0.3rem 0 0.6rem">Set a profit goal; it runs your strategy over real Binance candles and shows the real stats. No orders are placed.</p>
+          <div id="g-reco" class="reco hidden"></div>
           <div class="ticket">
             <div class="grid2">
               <div><label for="g-profit">Profit target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
@@ -1033,7 +1037,20 @@
             ? coins.map((c) => `<div class="fav"><span class="sym">${escapeHtml(c.symbol)}</span><span class="px"><div><span class="cedge">⭐ ${c.edge}%</span></div><div class="chg ${c.avg_profit_pct >= 0 ? "up" : "down"}">${c.avg_profit_pct >= 0 ? "+" : ""}${c.avg_profit_pct}% · ${c.runs}r</div></span></div>`).join("")
             : "<p style='font-size:0.85rem;color:#94A3B8'>No coins yet.</p>";
           renderFavs();
+          renderReco(strats[0], coins[0], d.total_runs || 0);
         } catch (e) { $("comm-strats").textContent = "Could not load community stats."; }
+      }
+      const stratValue = { ema_cross: "ema", rsi_reversion: "rsi", macd: "macd", sma_cross: "sma", breakout: "breakout" };
+      function renderReco(topStrat, topCoin, totalRuns) {
+        const box = $("g-reco");
+        if (!box || !topStrat || totalRuns < 1) { if (box) box.classList.add("hidden"); return; }
+        const sym = topCoin ? topCoin.symbol.replace(/USDT$/, "") : "";
+        box.innerHTML = `🤖 <b>ANNY recommends</b> ${escapeHtml(topStrat.name)}${sym ? " on " + escapeHtml(sym) : ""} <span style="color:var(--muted)">· from ${totalRuns} community missions · not advice</span> <button class="ghost" id="g-reco-apply">Apply</button>`;
+        box.classList.remove("hidden");
+        $("g-reco-apply").onclick = () => {
+          $("g-strategy").value = stratValue[topStrat.name] || "ema";
+          if (sym) $("g-symbol").value = sym;
+        };
       }
       function edgeBadge(sym) {
         const c = coinEdge[normSym(sym)] || coinEdge[sym];
