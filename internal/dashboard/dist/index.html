@@ -443,13 +443,14 @@
               <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
             </div>
             <div class="grid2">
-              <div><label for="g-risk">Max risk %<span class="ibadge" data-info="Max risk % is also your live-trade leverage: 5 = 5x. Lower is safer — it caps how much of your capital a single trade can lose.">ⓘ</span></label><input id="g-risk" inputmode="numeric" placeholder="5" value="5" autocomplete="off" /></div>
-              <div><label for="g-symbol">Symbol<span class="ibadge" data-info="Pick from your symbols. To add a coin, search & ★ it in the Coins panel below.">ⓘ</span></label><select id="g-symbol"><option value="BTC">BTC</option></select></div>
+              <div><label for="g-risk">Capital risk % <span class="ibadge" data-info="Maximum cumulative loss allowed for this plan, as a percentage of capital. It does not set leverage.">ⓘ</span></label><input id="g-risk" inputmode="numeric" min="1" max="100" placeholder="5" value="5" autocomplete="off" /></div>
+              <div><label for="g-leverage">Leverage use % <span class="ibadge" data-info="Percentage of the permitted leverage ceiling available to the model. Risk checks may choose less.">ⓘ</span></label><input id="g-leverage" inputmode="numeric" min="1" max="100" placeholder="25" value="25" autocomplete="off" /></div>
             </div>
             <div class="grid2">
-              <div><label for="g-strategy">Strategy</label><select id="g-strategy"><option value="auto">✨ Auto (mix strategies)</option><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option><option value="macd">MACD</option><option value="sma">SMA cross</option><option value="breakout">Breakout</option></select></div>
-              <div><label for="g-interval">Timeframe</label><select id="g-interval"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
+              <div><label for="g-symbol">Symbol <span class="ibadge" data-info="Symbol-specific limits are checked again before execution.">ⓘ</span></label><select id="g-symbol"><option value="BTC">BTC</option></select></div>
+              <div><label for="g-duration">Plan duration <span class="ibadge" data-info="How long this plan may open positions. A smaller execution timeframe is selected automatically.">ⓘ</span></label><select id="g-duration"><option value="15m">15m · dev</option><option value="1h" selected>1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="8h">8h</option><option value="12h">12h</option><option value="24h">24h</option><option value="48h">48h</option><option value="1w">1 week</option></select></div>
             </div>
+            <label for="g-strategy">Strategy</label><select id="g-strategy"><option value="auto">✨ Auto (mix strategies)</option><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option><option value="macd">MACD</option><option value="sma">SMA cross</option><option value="breakout">Breakout</option></select>
             <label class="gai"><input type="checkbox" id="g-ai" checked /> Let AI pick the side (per run)</label>
             <button class="primary" id="g-run" type="button">Run goal (paper)</button>
             <button class="ghost" id="g-live" type="button" style="border:1px solid var(--card-border)">🚀 Run live Mission (testnet) — places a real order on your active key, after Confirm</button>
@@ -1297,7 +1298,7 @@
         const cap = Number(st.capital || 100) || 100;
         const roi = (pnl / cap) * 100;
         $("bc-sym").textContent = st.symbol || normSym($("g-symbol").value) || "—";
-        const tags = [`<span class="bcard-tag">${escapeHtml(st.strategy || "")}</span>`, `<span class="bcard-tag">${escapeHtml(st.interval || "")}</span>`];
+        const tags = [`<span class="bcard-tag">${escapeHtml(st.strategy || "")}</span>`, `<span class="bcard-tag">${escapeHtml(st.duration || "")} plan</span>`, `<span class="bcard-tag">${escapeHtml(st.interval || "")} execution</span>`];
         if (st.used_ai) tags.push('<span class="bcard-tag ai">· AI</span>');
         $("bc-tags").innerHTML = tags.join(" ");
         $("bc-pnl").textContent = (up ? "+" : "") + (Math.round(pnl * 100) / 100); $("bc-pnl").className = "bcard-num mono " + (up ? "up" : "down");
@@ -1309,7 +1310,8 @@
           ["W / L", (st.wins || 0) + " / " + (st.losses || 0), ""],
           ["Capital", cap + " USDT", ""],
           ["Target", (st.profit_target || "0") + " USDT", ""],
-          ["Risk", (st.risk_pct || 0) + "%", ""],
+          ["Capital risk", (st.risk_pct || 0) + "%", ""],
+          ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ];
         $("bc-stats").innerHTML = cells.map(([k, v, cls]) => `<div class="bcard-cell"><div class="ck">${k}</div><div class="cv ${cls}">${escapeHtml(v)}</div></div>`).join("");
         $("bc-verdict").textContent = verdictText(st.verdict);
@@ -1326,8 +1328,8 @@
         $("g-run").disabled = true;
         const body = {
           profit: $("g-profit").value, capital: $("g-capital").value,
-          risk: parseInt($("g-risk").value, 10) || 5, symbol: $("g-symbol").value,
-          strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked,
+          capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, symbol: $("g-symbol").value,
+          strategy: $("g-strategy").value, duration: $("g-duration").value, use_ai: $("g-ai").checked,
         };
         try {
           const r = await fetch("/api/goal/run", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
@@ -1343,7 +1345,7 @@
         if (!confirm("Run a LIVE testnet Mission? ANNY will propose a real order on your active key — you still press Confirm before it places.")) return;
         goalMsg("Preparing live Mission…", true);
         $("g-live").disabled = true;
-        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, risk: parseInt($("g-risk").value, 10) || 5, strategy: $("g-strategy").value, interval: $("g-interval").value, use_ai: $("g-ai").checked };
+        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, strategy: $("g-strategy").value, duration: $("g-duration").value, use_ai: $("g-ai").checked };
         try {
           const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));

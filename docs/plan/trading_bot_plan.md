@@ -208,6 +208,16 @@ entry, wait for a short bounded window, cancel any remainder, then use `MARKET`
 only for the unfilled quantity. Protective SL/TP and urgent closes remain taker
 orders because avoiding an unprotected position takes priority over fee savings.
 
+Planning contract:
+
+- `capital_risk_pct` is the cumulative plan-loss ceiling as a percentage of
+  allocated capital. It is never reused as leverage.
+- `leverage_use_pct` is the percentage of the permitted leverage ceiling made
+  available to the model; execution may choose less.
+- `duration` is the plan's entry window, distinct from its automatically chosen
+  execution candle interval. Supported durations are dev `15m`, `1h`, `2h`,
+  `4h`, `8h`, `12h`, `24h`, `48h`, and `1w`.
+
 ## Logging And Sensitive Data Policy
 
 Use structured logs with correlation IDs. Logs may include sanitized user ID, symbol, intent type, status, and order IDs.

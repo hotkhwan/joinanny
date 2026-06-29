@@ -23,21 +23,23 @@ import (
 
 const (
 	missionSLPct       = 0.01 // stop distance as a fraction of entry
-	missionLeverage    = 3    // fallback when no risk% is given
 	missionMaxLeverage = 100  // testnet cap (BTC testnet allows up to 125x)
 	missionMaxSizeUSDT = 200  // hard cap on notional so a mission can't go large
 )
 
-// missionLeverageFor maps the Goal's "Max risk (% of capital)" to leverage —
-// 30% → 30x, 100% → 100x — clamped to [1, missionMaxLeverage]. Testnet only.
-func missionLeverageFor(riskPct int) int {
-	lev := riskPct
-	if lev <= 0 {
-		lev = missionLeverage
+// missionLeverageFor applies a percentage to the configured safety ceiling.
+// Capital risk is deliberately not reused as leverage.
+func missionLeverageFor(usePct, maxLeverage int) int {
+	if usePct <= 0 {
+		usePct = 25
 	}
-	if lev > missionMaxLeverage {
-		lev = missionMaxLeverage
+	if usePct > 100 {
+		usePct = 100
 	}
+	if maxLeverage <= 0 || maxLeverage > missionMaxLeverage {
+		maxLeverage = missionMaxLeverage
+	}
+	lev := (maxLeverage*usePct + 99) / 100
 	if lev < 1 {
 		lev = 1
 	}
@@ -72,10 +74,11 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
 	}
 	symbol := normalizeSymbol(req.Symbol)
-	interval := req.Interval
-	if !allowedIntervals[interval] {
-		interval = "1h"
+	spec, ok := allowedDurations[strings.ToLower(strings.TrimSpace(req.Duration))]
+	if !ok {
+		spec = allowedDurations["1h"]
 	}
+	interval := spec.ExecutionInterval
 	strategyName := "ema"
 	switch req.Strategy {
 	case "rsi", "macd", "sma", "breakout", "auto":
@@ -111,7 +114,7 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	entry := candles[len(candles)-1].Close
 	sl, tp := missionBracket(side, entry)
 	size := missionSize(req.Capital)
-	leverage := missionLeverageFor(req.Risk)
+	leverage := missionLeverageFor(req.LeverageUsePct, s.cfg.App.MaxLeverage)
 
 	decision := signals.Decision{
 		Action:     signals.ActionOpen,

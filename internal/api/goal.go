@@ -25,36 +25,40 @@ import (
 
 // goalRequest is the structured form the dashboard submits.
 type goalRequest struct {
-	Profit   json.Number `json:"profit"`
-	Capital  json.Number `json:"capital"`
-	Risk     int         `json:"risk"` // max drawdown, percent of capital
-	Symbol   string      `json:"symbol"`
-	Strategy string      `json:"strategy"` // "ema" | "rsi"
-	Interval string      `json:"interval"` // kline interval
-	Bars     int         `json:"bars"`     // history length
-	UseAI    bool        `json:"use_ai"`
+	Profit         json.Number `json:"profit"`
+	Capital        json.Number `json:"capital"`
+	Risk           int         `json:"risk"` // legacy alias for CapitalRiskPct
+	CapitalRiskPct int         `json:"capital_risk_pct"`
+	LeverageUsePct int         `json:"leverage_use_pct"`
+	Duration       string      `json:"duration"`
+	Interval       string      `json:"interval"` // legacy client fallback
+	Symbol         string      `json:"symbol"`
+	Strategy       string      `json:"strategy"`
+	UseAI          bool        `json:"use_ai"`
 }
 
 // GoalRun is a persisted summary of one paper run. It is keyed by the JWT
 // subject (UserKey) so it works for any authenticated user — Telegram or
 // password — not just Telegram accounts.
 type GoalRun struct {
-	UserKey      string    `json:"-" bson:"user_key"`
-	Symbol       string    `json:"symbol" bson:"symbol"`
-	Strategy     string    `json:"strategy" bson:"strategy"`
-	Interval     string    `json:"interval" bson:"interval"`
-	Bias         string    `json:"bias" bson:"bias"`
-	UsedAI       bool      `json:"used_ai" bson:"used_ai"`
-	ProfitTarget string    `json:"profit_target" bson:"profit_target"`
-	Capital      string    `json:"capital" bson:"capital"`
-	RiskPct      int       `json:"risk_pct" bson:"risk_pct"`
-	Trades       int       `json:"trades" bson:"trades"`
-	Wins         int       `json:"wins" bson:"wins"`
-	Losses       int       `json:"losses" bson:"losses"`
-	WinRatePct   float64   `json:"win_rate_pct" bson:"win_rate_pct"`
-	RealizedPnL  string    `json:"realized_pnl" bson:"realized_pnl"`
-	Verdict      string    `json:"verdict" bson:"verdict"`
-	CreatedAt    time.Time `json:"created_at" bson:"created_at"`
+	UserKey        string    `json:"-" bson:"user_key"`
+	Symbol         string    `json:"symbol" bson:"symbol"`
+	Strategy       string    `json:"strategy" bson:"strategy"`
+	Interval       string    `json:"interval" bson:"interval"`
+	Duration       string    `json:"duration" bson:"duration"`
+	Bias           string    `json:"bias" bson:"bias"`
+	UsedAI         bool      `json:"used_ai" bson:"used_ai"`
+	ProfitTarget   string    `json:"profit_target" bson:"profit_target"`
+	Capital        string    `json:"capital" bson:"capital"`
+	RiskPct        int       `json:"risk_pct" bson:"risk_pct"`
+	LeverageUsePct int       `json:"leverage_use_pct" bson:"leverage_use_pct"`
+	Trades         int       `json:"trades" bson:"trades"`
+	Wins           int       `json:"wins" bson:"wins"`
+	Losses         int       `json:"losses" bson:"losses"`
+	WinRatePct     float64   `json:"win_rate_pct" bson:"win_rate_pct"`
+	RealizedPnL    string    `json:"realized_pnl" bson:"realized_pnl"`
+	Verdict        string    `json:"verdict" bson:"verdict"`
+	CreatedAt      time.Time `json:"created_at" bson:"created_at"`
 }
 
 // GoalRunStore persists and lists paper goal runs for a user, keyed by JWT
@@ -66,16 +70,25 @@ type GoalRunStore interface {
 	Community(ctx context.Context, limit int) ([]GoalRun, error)
 }
 
-var allowedIntervals = map[string]bool{
-	"1m": true, "3m": true, "5m": true, "15m": true, "30m": true,
-	"1h": true, "2h": true, "4h": true, "6h": true, "12h": true, "1d": true,
+type durationSpec struct {
+	ExecutionInterval string
+	PlanBars          int
+}
+
+var allowedDurations = map[string]durationSpec{
+	"15m": {ExecutionInterval: "1m", PlanBars: 15},
+	"1h":  {ExecutionInterval: "1m", PlanBars: 60},
+	"2h":  {ExecutionInterval: "1m", PlanBars: 120},
+	"4h":  {ExecutionInterval: "5m", PlanBars: 48},
+	"8h":  {ExecutionInterval: "5m", PlanBars: 96},
+	"12h": {ExecutionInterval: "5m", PlanBars: 144},
+	"24h": {ExecutionInterval: "15m", PlanBars: 96},
+	"48h": {ExecutionInterval: "15m", PlanBars: 192},
+	"1w":  {ExecutionInterval: "1h", PlanBars: 168},
 }
 
 const (
-	goalMaxBars     = 1000
-	goalMinBars     = 60
-	goalDefaultBars = 500
-	goalHistoryMax  = 500
+	goalHistoryMax = 500
 )
 
 // handleGoalRun runs a paper goal over real candles and returns rich stats.
@@ -90,24 +103,25 @@ func (s *Server) handleGoalRun(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 	symbol := normalizeSymbol(req.Symbol)
-	interval := req.Interval
-	if !allowedIntervals[interval] {
-		interval = "1h"
+	duration := strings.ToLower(strings.TrimSpace(req.Duration))
+	spec, ok := allowedDurations[duration]
+	if !ok {
+		duration = "1h"
+		spec = allowedDurations[duration]
 	}
+	if req.LeverageUsePct <= 0 {
+		req.LeverageUsePct = 25
+	}
+	if req.LeverageUsePct > 100 {
+		req.LeverageUsePct = 100
+	}
+	interval := spec.ExecutionInterval
 	strategy := "ema"
 	switch req.Strategy {
 	case "rsi", "macd", "sma", "breakout", "auto":
 		strategy = req.Strategy
 	}
-	bars := req.Bars
-	switch {
-	case bars <= 0:
-		bars = goalDefaultBars
-	case bars < goalMinBars:
-		bars = goalMinBars
-	case bars > goalMaxBars:
-		bars = goalMaxBars
-	}
+	bars := spec.PlanBars + 40 // warmup + a small volatility lookback
 
 	candles, err := s.market.Candles(c.Context(), symbol, interval, bars)
 	if err != nil {
@@ -122,13 +136,14 @@ func (s *Server) handleGoalRun(c fiber.Ctx) error {
 
 	result, err := campaign.RunPaper(campaign.PaperConfig{
 		Goal: goal, Symbol: symbol, Strategy: strategy, Bias: bias,
+		PlanBars: spec.PlanBars,
 	}, candles)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	userKey := claimsOf(c).Subject
-	stats := summarize(userKey, req, interval, result)
+	stats := summarize(userKey, req, duration, interval, result)
 	// Persist a summary best-effort; a storage failure must not fail the run.
 	if userKey != "" {
 		if err := s.goalRuns.Save(c.Context(), stats); err != nil {
@@ -262,7 +277,10 @@ func buildGoal(req goalRequest) (campaign.Goal, error) {
 	if capital.Cmp(maxUSDT) > 0 {
 		return campaign.Goal{}, fmt.Errorf("capital is too large (max 1,000,000,000 USDT)")
 	}
-	risk := req.Risk
+	risk := req.CapitalRiskPct
+	if risk == 0 {
+		risk = req.Risk
+	}
 	if risk <= 0 {
 		risk = 30
 	}
@@ -273,24 +291,26 @@ func buildGoal(req goalRequest) (campaign.Goal, error) {
 	return campaign.ParseGoal(text)
 }
 
-func summarize(userKey string, req goalRequest, interval string, r campaign.PaperResult) GoalRun {
+func summarize(userKey string, req goalRequest, duration, interval string, r campaign.PaperResult) GoalRun {
 	return GoalRun{
-		UserKey:      userKey,
-		Symbol:       r.Symbol,
-		Strategy:     r.Strategy,
-		Interval:     interval,
-		Bias:         string(r.Bias),
-		UsedAI:       req.UseAI,
-		ProfitTarget: r.Goal.TargetProfitUSDT.String(),
-		Capital:      r.Goal.CapitalUSDT.String(),
-		RiskPct:      r.Goal.RiskPercent(),
-		Trades:       r.State.TradesClosed,
-		Wins:         r.Wins,
-		Losses:       r.Losses,
-		WinRatePct:   r.WinRatePct,
-		RealizedPnL:  r.State.RealizedPnL.String(),
-		Verdict:      string(r.Verdict),
-		CreatedAt:    time.Now().UTC(),
+		UserKey:        userKey,
+		Symbol:         r.Symbol,
+		Strategy:       r.Strategy,
+		Interval:       interval,
+		Duration:       duration,
+		Bias:           string(r.Bias),
+		UsedAI:         req.UseAI,
+		ProfitTarget:   r.Goal.TargetProfitUSDT.String(),
+		Capital:        r.Goal.CapitalUSDT.String(),
+		RiskPct:        r.Goal.RiskPercent(),
+		LeverageUsePct: req.LeverageUsePct,
+		Trades:         r.State.TradesClosed,
+		Wins:           r.Wins,
+		Losses:         r.Losses,
+		WinRatePct:     r.WinRatePct,
+		RealizedPnL:    r.State.RealizedPnL.String(),
+		Verdict:        string(r.Verdict),
+		CreatedAt:      time.Now().UTC(),
 	}
 }
 

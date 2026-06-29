@@ -16,6 +16,11 @@ Persistent collaboration rules for ANNY:
 - Paper planning must include estimated fees. Default assumptions are 0.02%
   maker entry and 0.04% taker exit; actual Binance fees depend on the user's
   VIP tier and discounts.
+- Entry/exit plans keep separate controls for capital-risk percentage and
+  leverage-use percentage. Capital risk must never be interpreted as leverage.
+- Plan duration is distinct from execution timeframe. Dev supports a 15-minute
+  plan on 1-minute candles; longer plans select 1m, 5m, 15m, or 1h execution
+  candles automatically.
 - Public visitors do not self-register from the dashboard. They can submit an
   interest email, stored durably in MongoDB `interest_signups`.
 - Early access flow is Interest → admin sends invite → account registration →

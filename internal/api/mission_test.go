@@ -100,13 +100,14 @@ func TestMissionGated(t *testing.T) {
 	}
 }
 
-func TestMissionLeverageFromRisk(t *testing.T) {
-	cases := []struct{ risk, want int }{
-		{30, 30}, {100, 100}, {0, 3}, {-5, 3}, {250, 100}, {1, 1},
+func TestMissionLeverageFromUsePercent(t *testing.T) {
+	cases := []struct{ use, max, want int }{
+		{25, 20, 5}, {100, 20, 20}, {0, 20, 5}, {-5, 20, 5},
+		{250, 20, 20}, {1, 20, 1}, {50, 50, 25},
 	}
 	for _, c := range cases {
-		if got := missionLeverageFor(c.risk); got != c.want {
-			t.Errorf("missionLeverageFor(%d) = %d, want %d", c.risk, got, c.want)
+		if got := missionLeverageFor(c.use, c.max); got != c.want {
+			t.Errorf("missionLeverageFor(%d, %d) = %d, want %d", c.use, c.max, got, c.want)
 		}
 	}
 }

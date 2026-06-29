@@ -43,6 +43,7 @@ type PaperConfig struct {
 	ExitFeeRate  float64 // fee on the exit fill; default = FeeRate (taker: SL/TP/close are MARKET).
 	MaxHoldBars  int     // force-close after N bars if neither level hits; default 24
 	WarmupBars   int     // bars before the first trade is allowed; default 30
+	PlanBars     int     // only allow new entries in the final N bars; 0 = all bars
 	// Adaptive stop: the stop distance is AtrStopMult × recent ATR% (clamped to
 	// [MinStopPct, MaxStopPct]), so a 1% move on 1m and on 1d aren't treated the
 	// same — a fixed % stop is pure noise on higher timeframes and stops out before
@@ -179,6 +180,9 @@ func RunPaper(cfg PaperConfig, candles []marketdata.Candle) (PaperResult, error)
 	}
 
 	i := cfg.WarmupBars
+	if cfg.PlanBars > 0 && len(candles)-cfg.PlanBars > i {
+		i = len(candles) - cfg.PlanBars
+	}
 	for i < len(candles)-1 {
 		if v := Evaluate(result.State); v != Continue {
 			result.Verdict = v
