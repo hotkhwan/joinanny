@@ -319,7 +319,7 @@ func goalSummaryText(goal campaign.Goal, r campaign.PaperResult, aiNote string) 
 		campaign.StopTargetReached: "🎯 target reached",
 		campaign.StopMaxDrawdown:   "🛑 stopped: max drawdown",
 		campaign.StopMaxTrades:     "⏹ stopped: max trades",
-		campaign.Continue:          "… ran out of history before a stop rule",
+		campaign.Continue:          "plan window completed",
 	}[r.Verdict]
 	if verdict == "" {
 		verdict = string(r.Verdict)

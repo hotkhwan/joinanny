@@ -21,6 +21,10 @@ Persistent collaboration rules for ANNY:
 - Plan duration is distinct from execution timeframe. Dev supports a 15-minute
   plan on 1-minute candles; longer plans select 1m, 5m, 15m, or 1h execution
   candles automatically.
+- A confirmed dev/testnet mission authorizes a timed close at plan expiry if
+  TP/SL has not already closed it. The current scheduler is process-local and
+  must move to a Mongo-backed restart-safe job before production private-model
+  execution.
 - Public visitors do not self-register from the dashboard. They can submit an
   interest email, stored durably in MongoDB `interest_signups`.
 - Early access flow is Interest → admin sends invite → account registration →

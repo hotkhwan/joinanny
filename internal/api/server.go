@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bottrade/internal/auth"
@@ -55,27 +56,28 @@ type eventStream interface {
 }
 
 type Server struct {
-	cfg         config.Config
-	processor   *signals.Processor
-	users       *users.Service
-	interest    *interest.Service
-	email       appemail.Sender
-	report      *journal.Service
-	tokenizer   *auth.Tokenizer
-	credentials *auth.CredentialService
-	stream      eventStream
-	market      *marketdata.BinanceProvider
-	orders      *orders.Service
-	parser      parser.Parser
-	advisor     signals.Advisor
-	goalRuns    GoalRunStore
-	access      AccessStore
-	aiSecrets   AISecretStore
-	favourites  FavouritesStore
-	keyring     *auth.Keyring
-	usage       *memUsage
-	logger      *slog.Logger
-	app         *fiber.App
+	cfg           config.Config
+	processor     *signals.Processor
+	users         *users.Service
+	interest      *interest.Service
+	email         appemail.Sender
+	report        *journal.Service
+	tokenizer     *auth.Tokenizer
+	credentials   *auth.CredentialService
+	stream        eventStream
+	market        *marketdata.BinanceProvider
+	orders        *orders.Service
+	parser        parser.Parser
+	advisor       signals.Advisor
+	goalRuns      GoalRunStore
+	access        AccessStore
+	aiSecrets     AISecretStore
+	favourites    FavouritesStore
+	keyring       *auth.Keyring
+	usage         *memUsage
+	timedMissions sync.Map // confirmation id -> timedMission; dev/testnet only
+	logger        *slog.Logger
+	app           *fiber.App
 }
 
 // Option customises a Server without breaking existing call sites.

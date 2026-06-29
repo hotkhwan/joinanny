@@ -37,7 +37,7 @@ func TestMissionPrepareAndConfirm(t *testing.T) {
 
 	// Prepare a live mission — staged, not yet placed.
 	code, out := post("/api/mission/prepare", token, map[string]any{
-		"symbol": "BTC", "capital": 100, "strategy": "ema", "interval": "1h",
+		"symbol": "BTC", "capital": 100, "strategy": "ema", "duration": "15m", "leverage_use_pct": 50,
 	})
 	if code != http.StatusOK {
 		t.Fatalf("prepare status = %d (%v)", code, out)
@@ -45,6 +45,11 @@ func TestMissionPrepareAndConfirm(t *testing.T) {
 	cid, _ := out["confirm_id"].(string)
 	if cid == "" || !strings.Contains(out["output"].(string), "Review this live Mission") {
 		t.Fatalf("prepare = %v, want a confirm_id and review text", out)
+	}
+	mission, _ := out["mission"].(map[string]any)
+	if mission["duration"] != "15m" || mission["leverage"] != float64(10) ||
+		mission["stop_loss"] == nil || mission["take_profit"] == nil {
+		t.Fatalf("mission metadata = %v, want duration/leverage/SL/TP", mission)
 	}
 
 	// Confirm executes (dry-run, so it reports a DRY-RUN result — nothing real).
@@ -108,6 +113,16 @@ func TestMissionLeverageFromUsePercent(t *testing.T) {
 	for _, c := range cases {
 		if got := missionLeverageFor(c.use, c.max); got != c.want {
 			t.Errorf("missionLeverageFor(%d, %d) = %d, want %d", c.use, c.max, got, c.want)
+		}
+	}
+}
+
+func TestPlanDuration(t *testing.T) {
+	for raw, want := range map[string]time.Duration{
+		"15m": 15 * time.Minute, "1h": time.Hour, "48h": 48 * time.Hour, "1w": 7 * 24 * time.Hour,
+	} {
+		if got := planDuration(raw); got != want {
+			t.Errorf("planDuration(%q) = %s, want %s", raw, got, want)
 		}
 	}
 }
