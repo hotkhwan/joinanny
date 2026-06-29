@@ -20,5 +20,7 @@ Persistent collaboration rules for ANNY:
   interest email, stored durably in MongoDB `interest_signups`.
 - Early access flow is Interest → admin sends invite → account registration →
   member waits for final admin approval while `FREE_SUB_OPEN=false`.
+- When early access is full, use `Close & waitlist`: send the capacity reply,
+  retain the lead with `waitlisted` status, and contact them again at launch.
 - Preserve user changes, including the plan documents moved into `docs/plan`.
 - Use `.codex/skills/my-bot-dev/SKILL.md` as the Codex-native project workflow.

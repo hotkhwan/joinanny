@@ -53,6 +53,17 @@ func (r *MemoryRepository) MarkRegistered(_ context.Context, email string) error
 	r.records[email] = rec
 	return nil
 }
+func (r *MemoryRepository) MarkWaitlisted(_ context.Context, email string, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.records[email]
+	if !ok {
+		return errors.New("interest: not found")
+	}
+	rec.Status, rec.InviteHash = "waitlisted", ""
+	r.records[email] = rec
+	return nil
+}
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{records: make(map[string]Record)}

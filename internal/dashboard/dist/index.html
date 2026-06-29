@@ -767,13 +767,25 @@
         try {
           const d = await (await fetch("/api/admin/interests", { headers: authHeaders() })).json();
           const list = d.interests || [];
-          box.innerHTML = list.length ? list.map((r) => `<div class="member"><div><b>${escapeHtml(r.email)}</b><br><span style="color:var(--muted);font-size:0.76rem">${escapeHtml(r.reason || "No reason provided")} · ${escapeHtml(r.status || "new")}</span></div>${r.status !== "registered" ? `<button class="primary mini" data-invite="${escapeHtml(r.email)}">Send invite</button>` : ""}</div>`).join("") : "<p style='font-size:0.85rem;color:var(--muted)'>No interests yet.</p>";
+          box.innerHTML = list.length ? list.map((r) => {
+            const active = r.status !== "registered" && r.status !== "waitlisted";
+            const actions = active ? `<div class="member-acts"><button class="primary mini" data-invite="${escapeHtml(r.email)}">Send invite</button><button class="ghost mini" data-waitlist="${escapeHtml(r.email)}">Close &amp; waitlist</button></div>` : "";
+            return `<div class="member"><div><b>${escapeHtml(r.email)}</b><br><span style="color:var(--muted);font-size:0.76rem">${escapeHtml(r.reason || "No reason provided")} · <span class="badge ${r.status === "waitlisted" ? "live" : ""}">${escapeHtml(r.status || "new")}</span></span></div>${actions}</div>`;
+          }).join("") : "<p style='font-size:0.85rem;color:var(--muted)'>No interests yet.</p>";
           box.querySelectorAll("[data-invite]").forEach((b) => b.onclick = async () => {
             b.disabled = true;
             const r = await fetch("/api/admin/interests/invite", { method:"POST", headers:authHeaders(), body:JSON.stringify({email:b.dataset.invite}) });
             const out = await r.json().catch(() => ({}));
             if (!r.ok || !out.sent) showToast(out.error || ("Email is not configured. Copy link: " + (out.invite_url || "")));
             else showToast("Invitation sent.");
+            loadAdminInterests();
+          });
+          box.querySelectorAll("[data-waitlist]").forEach((b) => b.onclick = async () => {
+            if (!confirm("Close early access and send the waitlist reply to " + b.dataset.waitlist + "?")) return;
+            b.disabled = true;
+            const r = await fetch("/api/admin/interests/waitlist", { method:"POST", headers:authHeaders(), body:JSON.stringify({email:b.dataset.waitlist}) });
+            const out = await r.json().catch(() => ({}));
+            showToast(r.ok ? "Reply sent and interest moved to waitlist." : (out.error || "Could not update waitlist."));
             loadAdminInterests();
           });
         } catch (_) { box.textContent = "Could not load interests."; }

@@ -30,6 +30,7 @@ type Repository interface {
 	SetInvite(context.Context, string, string, time.Time, time.Time) error
 	FindByInviteHash(context.Context, string) (Record, error)
 	MarkRegistered(context.Context, string) error
+	MarkWaitlisted(context.Context, string, time.Time) error
 }
 
 type Service struct {
@@ -81,4 +82,7 @@ func (s *Service) FindInvite(ctx context.Context, hash string) (Record, error) {
 }
 func (s *Service) MarkRegistered(ctx context.Context, email string) error {
 	return s.repo.MarkRegistered(ctx, email)
+}
+func (s *Service) MarkWaitlisted(ctx context.Context, email string) error {
+	return s.repo.MarkWaitlisted(ctx, email, s.now().UTC())
 }

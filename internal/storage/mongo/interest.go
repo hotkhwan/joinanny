@@ -42,6 +42,13 @@ func (r *InterestRepository) MarkRegistered(ctx context.Context, email string) e
 	_, err := r.coll.UpdateOne(ctx, bson.M{"email": email}, bson.M{"$set": bson.M{"status": "registered"}, "$unset": bson.M{"invite_hash": ""}})
 	return err
 }
+func (r *InterestRepository) MarkWaitlisted(ctx context.Context, email string, at time.Time) error {
+	_, err := r.coll.UpdateOne(ctx, bson.M{"email": email}, bson.M{
+		"$set":   bson.M{"status": "waitlisted", "waitlisted_at": at},
+		"$unset": bson.M{"invite_hash": "", "invite_expires_at": ""},
+	})
+	return err
+}
 
 func (s *Store) Interest() *InterestRepository {
 	return &InterestRepository{coll: s.interest}

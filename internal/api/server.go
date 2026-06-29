@@ -259,6 +259,7 @@ func (s *Server) routes() {
 	s.app.Get("/api/admin/members", s.requireAuth, s.handleAdminMembers)
 	s.app.Get("/api/admin/interests", s.requireAuth, s.handleAdminInterests)
 	s.app.Post("/api/admin/interests/invite", s.requireAuth, s.handleAdminInterestInvite)
+	s.app.Post("/api/admin/interests/waitlist", s.requireAuth, s.handleAdminInterestWaitlist)
 	s.app.Post("/api/admin/approve", s.requireAuth, s.handleAdminApprove)
 	s.app.Post("/api/admin/revoke", s.requireAuth, s.handleAdminRevoke)
 	s.app.Post("/api/admin/make-admin", s.requireAuth, s.handleAdminMakeAdmin)
@@ -496,6 +497,32 @@ func (s *Server) handleAdminInterestInvite(c fiber.Ctx) error {
 		sent = true
 	}
 	return c.JSON(fiber.Map{"sent": sent, "invite_url": link, "expires_at": expires})
+}
+
+func (s *Server) handleAdminInterestWaitlist(c fiber.Ctx) error {
+	if !s.isAdmin(c) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin only"})
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if json.Unmarshal(c.Body(), &body) != nil || strings.TrimSpace(body.Email) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "email is required"})
+	}
+	email := strings.ToLower(strings.TrimSpace(body.Email))
+	if s.email == nil {
+		return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "email is not configured"})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
+	defer cancel()
+	if err := s.email.SendWaitlistFull(ctx, email); err != nil {
+		s.logger.Warn("waitlist email failed", "error", err)
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "email could not be sent; status was not changed"})
+	}
+	if err := s.interest.MarkWaitlisted(c.Context(), email); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "email sent but waitlist status could not be saved"})
+	}
+	return c.JSON(fiber.Map{"waitlisted": true})
 }
 
 func (s *Server) handleInviteRegister(c fiber.Ctx) error {
