@@ -366,9 +366,27 @@ func summarize(userKey string, req goalRequest, duration, interval, validation s
 
 func noSetupReason(r campaign.PaperResult) string {
 	if strings.HasPrefix(r.Strategy, "anny_basic") {
-		return "No CDC/QQE setup in this validation window"
+		return annyBasicBlockedReason(r)
 	}
 	return "No trade setup in this validation window"
+}
+
+func annyBasicBlockedReason(r campaign.PaperResult) string {
+	if r.Diagnostics.SetupsFound > 0 && r.Diagnostics.BiasRejected > 0 {
+		return "AI side filter rejected all launchable ANNY Basic setups"
+	}
+	switch r.Diagnostics.TopBlocker {
+	case "no-trade market condition":
+		return "ANNY Basic market-condition filter blocked this validation window"
+	case "CDC and QQE are not aligned":
+		return "CDC/QQE did not align in this validation window"
+	case "indicator warmup":
+		return "ANNY Basic indicator warmup left no launchable setup"
+	case "AI side filter":
+		return "AI side filter rejected all launchable ANNY Basic setups"
+	default:
+		return "No launchable ANNY Basic setup in this validation window"
+	}
 }
 
 func planEditHint(r campaign.PaperResult) string {
@@ -376,13 +394,13 @@ func planEditHint(r campaign.PaperResult) string {
 		return "Try another duration, another symbol, or another strategy, then assess again."
 	}
 	if r.Diagnostics.SetupsFound > 0 && r.Diagnostics.BiasRejected > 0 {
-		return "CDC/QQE found a setup, but the AI side filter rejected it. Try disabling AI side pick or reassess when AI confidence is higher."
+		return "The model found a setup, but the AI side filter rejected it. Try disabling AI side pick or reassess when AI confidence is higher."
 	}
 	switch r.Diagnostics.TopBlocker {
 	case "CDC and QQE are not aligned":
-		return "Wait for CDC/QQE alignment, try another symbol, or reassess after a longer plan window."
+		return "Wait for CDC/QQE alignment, try another symbol, or use Auto/RSI for paper assessment while ANNY Basic waits."
 	case "no-trade market condition":
-		return "Market condition filter blocked the setup. Try another symbol or wait for a cleaner, less extended move."
+		return "Try another symbol, use Auto/RSI for paper assessment, or wait for a cleaner, less extended move."
 	case "indicator warmup":
 		return "Market data loaded but the model needed more aligned 15m/1m warmup. Reassess in a moment or try a longer duration."
 	case "":
@@ -428,7 +446,7 @@ func goalSummaryText(goal campaign.Goal, r campaign.PaperResult, stats GoalRun, 
 	}
 	if stats.NeedsPlanEdit {
 		fmt.Fprintf(&b, "\n📊 Plan assessment on real %s candles: edit plan\n", r.Symbol)
-		fmt.Fprintf(&b, "%s. Market data loaded, but no paper result is launchable from this window. Entries needed by goal math: %d. Strategy setups found: %d.",
+		fmt.Fprintf(&b, "%s. Market data loaded, but no paper result is launchable from this window. Entries needed by goal math: %d. Launchable setups found: %d.",
 			stats.BlockedReason, stats.EstimatedEntries, stats.SignalSetups)
 		if stats.TopBlocker != "" {
 			fmt.Fprintf(&b, " Top blocker: %s.", stats.TopBlocker)

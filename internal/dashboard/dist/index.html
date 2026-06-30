@@ -1333,7 +1333,7 @@
       }
       function verdictText(v, st) {
         if (st && st.blocked_reason) return "Edit plan: " + st.blocked_reason;
-        if ((st && st.strategy || "").startsWith("anny_basic") && Number((st && st.trades) || 0) === 0) return "Edit plan: No CDC/QQE setup in this validation window";
+        if ((st && st.strategy || "").startsWith("anny_basic") && Number((st && st.trades) || 0) === 0) return "Edit plan: No launchable ANNY Basic setup in this validation window";
         return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: capital risk limit", max_trades: "⏹ Stopped: max trades", continue: "Target not reached in this window" })[v] || v || "";
       }
       // bcardSpark draws a Binance-style area sparkline (line + soft fill), green
@@ -1382,7 +1382,7 @@
         const cells = needsEdit ? [
           ["Market data", "OK", "up"],
           ["Entries needed", String(st.estimated_entries || "—"), ""],
-          ["Setups found", String(st.signal_setups || 0), Number(st.signal_setups || 0) > 0 ? "up" : "down"],
+          ["Launchable setups", String(st.signal_setups || 0), Number(st.signal_setups || 0) > 0 ? "up" : "down"],
           ["Trades found", String(st.trades || 0), "down"],
           ["Validation", st.validation_window || st.duration || "—", ""],
           ["Plan action", "Edit plan", "down"],

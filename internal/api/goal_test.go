@@ -207,8 +207,8 @@ func TestAnnyBasicGoalPreservesRequestedDuration(t *testing.T) {
 	if stats["actionable"] != false || stats["needs_plan_edit"] != true {
 		t.Fatalf("actionability = actionable:%v needs_plan_edit:%v, want plan edit", stats["actionable"], stats["needs_plan_edit"])
 	}
-	if reason, _ := stats["blocked_reason"].(string); !strings.Contains(reason, "No CDC/QQE setup") {
-		t.Fatalf("blocked reason = %q, want CDC/QQE no-setup", reason)
+	if reason, _ := stats["blocked_reason"].(string); strings.TrimSpace(reason) == "" || strings.Contains(reason, "No CDC/QQE setup") {
+		t.Fatalf("blocked reason = %q, want a specific ANNY Basic blocker", reason)
 	}
 	if estimate, _ := stats["estimated_entries"].(float64); estimate <= 0 {
 		t.Fatalf("estimated entries = %v, want positive estimate", stats["estimated_entries"])
@@ -219,7 +219,7 @@ func TestAnnyBasicGoalPreservesRequestedDuration(t *testing.T) {
 	if hint, _ := stats["plan_hint"].(string); strings.TrimSpace(hint) == "" {
 		t.Fatalf("plan hint = %q, want edit guidance", hint)
 	}
-	if output, _ := out["output"].(string); !strings.Contains(output, "edit plan") || !strings.Contains(output, "Market data loaded") || !strings.Contains(output, "Entries needed") || !strings.Contains(output, "Strategy setups found") {
+	if output, _ := out["output"].(string); !strings.Contains(output, "edit plan") || !strings.Contains(output, "Market data loaded") || !strings.Contains(output, "Entries needed") || !strings.Contains(output, "Launchable setups found") {
 		t.Fatalf("output = %q, want edit-plan guidance with entry estimate", output)
 	}
 	hreq := httptest.NewRequest(http.MethodGet, "/api/goal/history", nil)
@@ -232,6 +232,51 @@ func TestAnnyBasicGoalPreservesRequestedDuration(t *testing.T) {
 	json.NewDecoder(hresp.Body).Decode(&hist)
 	if len(hist.Runs) != 0 {
 		t.Fatalf("no-setup assessment should not persist as a paper mission, got history: %+v", hist.Runs)
+	}
+}
+
+func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
+	tests := []struct {
+		name string
+		res  campaign.PaperResult
+		want string
+	}{
+		{
+			name: "market condition",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "no-trade market condition"},
+			},
+			want: "market-condition filter",
+		},
+		{
+			name: "cdc qqe alignment",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "CDC and QQE are not aligned"},
+			},
+			want: "CDC/QQE did not align",
+		},
+		{
+			name: "ai side filter",
+			res: campaign.PaperResult{
+				Strategy: "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{
+					SetupsFound:  1,
+					BiasRejected: 1,
+					TopBlocker:   "AI side filter",
+				},
+			},
+			want: "AI side filter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := noSetupReason(tt.res)
+			if !strings.Contains(got, tt.want) || strings.Contains(got, "No CDC/QQE setup") {
+				t.Fatalf("noSetupReason() = %q, want %q without generic CDC/QQE text", got, tt.want)
+			}
+		})
 	}
 }
 

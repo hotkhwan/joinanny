@@ -66,11 +66,11 @@ test("ANNY Basic no-setup asks for plan edit, not a zero paper result", async ({
   await expect(card).toContainText("Market data");
   await expect(card).toContainText("OK");
   await expect(card).toContainText("Entries needed");
-  await expect(card).toContainText("Setups found");
+  await expect(card).toContainText("Launchable setups");
   await expect(card).toContainText("Trades found");
   await expect(card).toContainText("Top blocker");
   await expect(card).toContainText("Next edit");
-  await expect(card).toContainText("No CDC/QQE setup");
+  await expect(card).not.toContainText("No CDC/QQE setup");
   await expect(card).not.toContainText("+0% ROI");
   await expect(page.locator("#bc-spark svg")).toHaveCount(0);
   await expect(page.locator("#g-live")).toBeHidden();
