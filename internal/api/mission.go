@@ -10,7 +10,6 @@ import (
 	"bottrade/internal/backtest"
 	"bottrade/internal/campaign"
 	"bottrade/internal/decimal"
-	"bottrade/internal/domain"
 	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/signals"
@@ -239,59 +238,6 @@ func minPositive(a, b int) int {
 	default:
 		return b
 	}
-}
-
-func (s *Server) scheduleTimedMissionClose(m timedMission) {
-	if !s.cfg.App.CampaignLiveEnabled || !s.cfg.Binance.Testnet ||
-		s.cfg.App.RealTradingEnabled || s.cfg.App.DryRun || m.Duration <= 0 {
-		return
-	}
-	go func() {
-		timer := time.NewTimer(m.Duration)
-		defer timer.Stop()
-		<-timer.C
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		subject := orders.TraderKey(m.UserID)
-		if !s.hasActiveKeyForSubject(ctx, subject) {
-			s.logger.Warn("timed mission: active testnet key missing", "symbol", m.Symbol)
-			return
-		}
-		positions, err := s.orders.PositionsWithRequiredUserExecutor(ctx, m.UserID)
-		if err != nil {
-			s.logger.Warn("timed mission: load positions failed", "symbol", m.Symbol, "error", err)
-			return
-		}
-		open := false
-		for _, p := range positions {
-			if strings.EqualFold(p.Symbol, m.Symbol) && !p.Amount.IsZero() {
-				open = true
-				break
-			}
-		}
-		if !open {
-			return
-		}
-		intent := domain.Intent{Type: domain.IntentClose, Close: &domain.CloseIntent{
-			Symbol: m.Symbol, All: true, ResolvedPercent: decimal.NewFromInt(100),
-		}}
-		confirmation, err := s.orders.Prepare(ctx, m.UserID, intent)
-		if err != nil {
-			s.logger.Warn("timed mission: prepare close failed", "symbol", m.Symbol, "error", err)
-			return
-		}
-		if !s.armedMissionRuntimeAllowed() || !s.hasActiveKeyForSubject(ctx, subject) {
-			_ = s.orders.Cancel(ctx, m.UserID, confirmation.ID)
-			s.logger.Warn("timed mission: gate closed before confirm", "symbol", m.Symbol)
-			return
-		}
-		if _, err := s.orders.ConfirmWithRequiredUserExecutor(ctx, m.UserID, confirmation.ID); err != nil {
-			s.logger.Warn("timed mission: confirm close failed", "symbol", m.Symbol, "error", err)
-			return
-		}
-		s.logger.Info("timed mission closed at plan deadline", "user_id", m.UserID, "symbol", m.Symbol)
-	}()
 }
 
 // hasActiveKey reports whether the user has an active testnet Binance key.

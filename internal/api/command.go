@@ -113,12 +113,17 @@ func (s *Server) handleConfirm(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"output": "Cancelled."})
 	}
 
+	var scheduledClose ScheduledClose
+	if value, ok := s.timedMissions.LoadAndDelete(body.ID); ok {
+		var err error
+		if scheduledClose, err = s.scheduleTimedMissionClose(value.(timedMission)); err != nil {
+			return c.JSON(fiber.Map{"output": "⚠️ Could not schedule the timed close: " + err.Error()})
+		}
+	}
 	result, err := s.orders.Confirm(c.Context(), userID, body.ID)
 	if err != nil {
+		s.cancelScheduledClose(c.Context(), scheduledClose, "entry confirm failed: "+err.Error())
 		return c.JSON(fiber.Map{"output": "⚠️ " + err.Error()})
-	}
-	if value, ok := s.timedMissions.LoadAndDelete(body.ID); ok {
-		s.scheduleTimedMissionClose(value.(timedMission))
 	}
 	out := result.Message
 	if strings.TrimSpace(out) == "" {

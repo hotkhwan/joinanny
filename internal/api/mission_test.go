@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"bottrade/internal/auth"
+	"bottrade/internal/decimal"
+	"bottrade/internal/domain"
 	"bottrade/internal/marketdata"
 	"bottrade/internal/orders"
 	"bottrade/internal/strategy/annybasic"
@@ -40,6 +43,30 @@ func (e *missionTestExecutor) Execute(_ context.Context, confirmation orders.Con
 		ClientOrderID: "testnet-" + confirmation.ID,
 		Message:       "TESTNET accepted",
 	}, nil
+}
+
+type scheduledCloseExecutor struct {
+	positions     []domain.Position
+	err           error
+	calls         int
+	confirmations []orders.Confirmation
+}
+
+func (e *scheduledCloseExecutor) Execute(_ context.Context, confirmation orders.Confirmation) (orders.ExecutionResult, error) {
+	e.calls++
+	e.confirmations = append(e.confirmations, confirmation)
+	if e.err != nil {
+		return orders.ExecutionResult{}, e.err
+	}
+	return orders.ExecutionResult{
+		Mode:          "binance_testnet",
+		ClientOrderID: "timed-close-" + confirmation.ID,
+		Message:       "TESTNET close accepted",
+	}, nil
+}
+
+func (e *scheduledCloseExecutor) Positions(context.Context) ([]domain.Position, error) {
+	return e.positions, nil
 }
 
 type missionTestProvider struct {
@@ -410,6 +437,198 @@ func TestArmedMissionWatcherAutoConfirmsOnceAndGated(t *testing.T) {
 	}
 	if len(exec.confirmations) != 1 || exec.confirmations[0].IdempotencyKey != mission.IdempotencyKey {
 		t.Fatalf("confirmation idempotency = %+v, want armed key %q", exec.confirmations, mission.IdempotencyKey)
+	}
+}
+
+func TestScheduledCloseClaimSingleWinnerAndRetention(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	close := ScheduledClose{
+		ID: "close_claim", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT",
+		DueAt: now.Add(-time.Minute), Status: ScheduledCloseStatusPending, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.Save(context.Background(), close); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	first, claimed, err := store.ClaimDue(context.Background(), close.ID, now)
+	if err != nil || !claimed || first.Status != ScheduledCloseStatusExecuting {
+		t.Fatalf("first claim = %+v claimed=%v err=%v", first, claimed, err)
+	}
+	second, claimed, err := store.ClaimDue(context.Background(), close.ID, now)
+	if err != nil || claimed || second.Status != ScheduledCloseStatusExecuting {
+		t.Fatalf("second claim = %+v claimed=%v err=%v, want no double claim", second, claimed, err)
+	}
+	done, changed, err := store.MarkDone(context.Background(), close.ID, "confirm_1", "closed", now.Add(time.Second))
+	if err != nil || !changed || done.Status != ScheduledCloseStatusDone || done.PurgeAt == nil {
+		t.Fatalf("mark done = %+v changed=%v err=%v, want retained terminal row", done, changed, err)
+	}
+}
+
+func TestScheduledCloseReclaimsStaleExecutingAfterRestart(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	stale := ScheduledClose{
+		ID: "close_stale", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT",
+		DueAt:     now.Add(-time.Minute),
+		Status:    ScheduledCloseStatusExecuting,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-ScheduledCloseClaimTimeout - time.Second),
+	}
+	fresh := stale
+	fresh.ID = "close_fresh"
+	fresh.UpdatedAt = now.Add(-ScheduledCloseClaimTimeout + time.Second)
+	if err := store.Save(context.Background(), stale); err != nil {
+		t.Fatalf("save stale: %v", err)
+	}
+	if err := store.Save(context.Background(), fresh); err != nil {
+		t.Fatalf("save fresh: %v", err)
+	}
+	due, err := store.ListDue(context.Background(), now, 10)
+	if err != nil || len(due) != 1 || due[0].ID != stale.ID {
+		t.Fatalf("due rows = %+v err=%v, want only stale executing", due, err)
+	}
+	claimed, ok, err := store.ClaimDue(context.Background(), stale.ID, now)
+	if err != nil || !ok || !claimed.UpdatedAt.Equal(now) {
+		t.Fatalf("reclaim = %+v ok=%v err=%v, want updated stale claim", claimed, ok, err)
+	}
+	if _, ok, err := store.ClaimDue(context.Background(), fresh.ID, now); err != nil || ok {
+		t.Fatalf("fresh executing claim ok=%v err=%v, want no reclaim", ok, err)
+	}
+}
+
+func TestScheduledCloseGateClosedSkipsNoOrder(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	if err := store.Save(context.Background(), ScheduledClose{
+		ID: "close_gated", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT",
+		DueAt: now.Add(-time.Minute), Status: ScheduledCloseStatusPending, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	exec := &scheduledCloseExecutor{positions: []domain.Position{
+		{Symbol: "BTCUSDT", Amount: decimal.MustParse("0.01")},
+	}}
+	server := NewServer(testConfigWith(t, map[string]string{"ACCESS_OPEN": "true"}), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithScheduledCloseStore(store),
+		WithCredentials(testCredentialService(t, "tg:7", true)))
+
+	handled, err := server.runDueScheduledCloses(context.Background(), now)
+	if err != nil || handled != 1 {
+		t.Fatalf("run due handled=%d err=%v, want one skipped row", handled, err)
+	}
+	got := store.rows["close_gated"]
+	if got.Status != ScheduledCloseStatusSkipped || !strings.Contains(got.Reason, "gate closed") || exec.calls != 0 {
+		t.Fatalf("scheduled close = %+v calls=%d, want skipped/no order", got, exec.calls)
+	}
+}
+
+func TestScheduledCloseNoOpenPositionDone(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	if err := store.Save(context.Background(), ScheduledClose{
+		ID: "close_empty", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT",
+		DueAt: now.Add(-time.Minute), Status: ScheduledCloseStatusPending, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	exec := &scheduledCloseExecutor{}
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv("")), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithScheduledCloseStore(store),
+		WithCredentials(testCredentialService(t, "tg:7", true)))
+
+	handled, err := server.runDueScheduledCloses(context.Background(), now)
+	if err != nil || handled != 1 {
+		t.Fatalf("run due handled=%d err=%v, want one done row", handled, err)
+	}
+	got := store.rows["close_empty"]
+	if got.Status != ScheduledCloseStatusDone || got.ConfirmationID != "" || got.Reason != "no open position" || exec.calls != 0 {
+		t.Fatalf("scheduled close = %+v calls=%d, want done/no-op", got, exec.calls)
+	}
+}
+
+func TestScheduledCloseClosesOpenPositionOnce(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	if err := store.Save(context.Background(), ScheduledClose{
+		ID: "close_open", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT",
+		DueAt: now.Add(-time.Minute), Status: ScheduledCloseStatusPending, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	exec := &scheduledCloseExecutor{positions: []domain.Position{
+		{Symbol: "BTCUSDT", Amount: decimal.MustParse("0.01")},
+	}}
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv("")), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithScheduledCloseStore(store),
+		WithCredentials(testCredentialService(t, "tg:7", true)))
+
+	handled, err := server.runDueScheduledCloses(context.Background(), now)
+	if err != nil || handled != 1 {
+		t.Fatalf("run due handled=%d err=%v, want one close", handled, err)
+	}
+	got := store.rows["close_open"]
+	if got.Status != ScheduledCloseStatusDone || got.ConfirmationID == "" || got.Reason != "closed at plan deadline" || exec.calls != 1 {
+		t.Fatalf("scheduled close = %+v calls=%d, want one confirmed close", got, exec.calls)
+	}
+	if len(exec.confirmations) != 1 || exec.confirmations[0].Intent.Type != domain.IntentClose ||
+		exec.confirmations[0].Intent.Close == nil || !exec.confirmations[0].Intent.Close.All {
+		t.Fatalf("confirmation = %+v, want close-all intent", exec.confirmations)
+	}
+	handled, err = server.runDueScheduledCloses(context.Background(), now.Add(time.Second))
+	if err != nil || handled != 0 || exec.calls != 1 {
+		t.Fatalf("second run handled=%d err=%v calls=%d, want no double close", handled, err, exec.calls)
+	}
+}
+
+func TestArmedMissionCancelsScheduledCloseWhenEntryConfirmFails(t *testing.T) {
+	armedStore := newMemArmedMissions()
+	closeStore := newMemScheduledCloses()
+	now := time.Now().UTC()
+	mission := ArmedMission{
+		ID: "arm_fail", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT", Strategy: annybasic.ID,
+		CapitalUSDT: "100", LeverageUsePct: 50, Duration: "15m", Status: ArmedMissionStatusArmed, IdempotencyKey: "k-fail",
+		ArmedAt: now, ExpiresAt: now.Add(time.Hour), PurgeAt: armedMissionPurgeAt(now.Add(time.Hour)), CreatedAt: now, UpdatedAt: now,
+	}
+	if err := armedStore.Save(context.Background(), mission); err != nil {
+		t.Fatalf("save armed mission: %v", err)
+	}
+	exec := &scheduledCloseExecutor{err: errors.New("exchange rejected")}
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv("")), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithCredentials(testCredentialService(t, "tg:7", true)),
+		WithArmedMissionStore(armedStore), WithScheduledCloseStore(closeStore))
+
+	_, done, err := server.triggerArmedMission(context.Background(), mission, 100, annybasic.Decision{
+		Side: annybasic.SideLong, MaxLeverage: 20, Reason: "CDC and QQE aligned",
+	}, now.Add(time.Minute))
+	if err == nil || !done || exec.calls != 1 {
+		t.Fatalf("trigger done=%v err=%v calls=%d, want failed confirm after one attempt", done, err, exec.calls)
+	}
+	if len(closeStore.rows) != 1 {
+		t.Fatalf("scheduled close rows = %+v, want one cancelled row", closeStore.rows)
+	}
+	for _, row := range closeStore.rows {
+		if row.Status != ScheduledCloseStatusCancelled || !strings.Contains(row.Reason, "entry confirm failed") {
+			t.Fatalf("scheduled close after failed entry = %+v, want cancelled", row)
+		}
+	}
+}
+
+func TestScheduleTimedMissionClosePersistsJob(t *testing.T) {
+	store := newMemScheduledCloses()
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv("")), nil, testLogger(), WithScheduledCloseStore(store))
+	start := time.Now().UTC()
+	close, err := server.scheduleTimedMissionClose(timedMission{UserID: 7, Symbol: "BTC", Duration: 15 * time.Minute})
+	if err != nil {
+		t.Fatalf("schedule timed close: %v", err)
+	}
+	if close.ID == "" || close.Status != ScheduledCloseStatusPending || close.UserKey != "tg:7" || close.Symbol != "BTCUSDT" {
+		t.Fatalf("scheduled close = %+v, want pending tg:7 BTCUSDT", close)
+	}
+	if close.DueAt.Before(start.Add(15*time.Minute)) || close.DueAt.After(time.Now().UTC().Add(16*time.Minute)) {
+		t.Fatalf("due_at = %s, want about 15m from now", close.DueAt)
+	}
+	if _, ok := store.rows[close.ID]; !ok {
+		t.Fatalf("scheduled close %q was not persisted", close.ID)
 	}
 }
 
