@@ -41,6 +41,30 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestEvaluateNoTradeReasonsAreSpecific(t *testing.T) {
+	tests := []struct {
+		name string
+		obs  Observation
+		want string
+	}{
+		{"abnormal volatility", Observation{AbnormalVolatility: true}, "abnormal volatility"},
+		{"sideways", Observation{Sideways: true}, "sideways market"},
+		{"extended", Observation{EntryExtended: true}, "entry extended from trend"},
+		{"execution unaligned", Observation{ExecutionAligned: false}, "execution not aligned"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Evaluate(tt.obs, State{}, 20)
+			if got.Side != SideNone || got.Stop {
+				t.Fatalf("Evaluate() = %+v, want no-trade", got)
+			}
+			if got.Reason != tt.want {
+				t.Fatalf("reason = %q, want %q", got.Reason, tt.want)
+			}
+		})
+	}
+}
+
 func TestAllowRescue(t *testing.T) {
 	valid := RescueRequest{
 		SetupValid: true, WickOnly: true, AmountUSDT: dec(5), CapitalAfterUSDT: dec(20),

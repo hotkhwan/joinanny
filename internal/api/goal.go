@@ -376,7 +376,8 @@ func annyBasicBlockedReason(r campaign.PaperResult) string {
 		return "AI side filter rejected all launchable ANNY Basic setups"
 	}
 	switch r.Diagnostics.TopBlocker {
-	case "no-trade market condition":
+	case "no-trade market condition", "abnormal volatility", "sideways market",
+		"entry extended from trend", "execution not aligned":
 		return "ANNY Basic market-condition filter blocked this validation window"
 	case "CDC and QQE are not aligned":
 		return "CDC/QQE did not align in this validation window"
@@ -399,7 +400,8 @@ func planEditHint(r campaign.PaperResult) string {
 	switch r.Diagnostics.TopBlocker {
 	case "CDC and QQE are not aligned":
 		return "Wait for CDC/QQE alignment, try another symbol, or use Auto/RSI for paper assessment while ANNY Basic waits."
-	case "no-trade market condition":
+	case "no-trade market condition", "abnormal volatility", "sideways market",
+		"entry extended from trend", "execution not aligned":
 		return "Try another symbol, use Auto/RSI for paper assessment, or wait for a cleaner, less extended move."
 	case "indicator warmup":
 		return "Market data loaded but the model needed more aligned 15m/1m warmup. Reassess in a moment or try a longer duration."

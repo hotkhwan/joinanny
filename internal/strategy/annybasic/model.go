@@ -81,8 +81,8 @@ func Evaluate(obs Observation, state State, maxLeverage int) Decision {
 	if state.ConsecutiveLosses >= 2 {
 		return Decision{Phase: phase, Reason: "two consecutive losses", Stop: true}
 	}
-	if obs.AbnormalVolatility || obs.Sideways || obs.EntryExtended || !obs.ExecutionAligned {
-		return Decision{Phase: phase, Reason: "no-trade market condition"}
+	if reason, blocked := noTradeReason(obs); blocked {
+		return Decision{Phase: phase, Reason: reason}
 	}
 
 	side := SideNone
@@ -107,6 +107,25 @@ func Evaluate(obs Observation, state State, maxLeverage int) Decision {
 		Phase:       phase,
 		MaxLeverage: clampLeverage(modelCap, maxLeverage),
 		Reason:      "CDC and QQE aligned",
+	}
+}
+
+// noTradeReason reports the specific market-condition gate that blocks an entry.
+// Splitting the gates lets paper diagnostics attribute blocks to one stage
+// instead of a single lumped "no-trade" bucket. The order is fixed so the
+// attribution is stable and testable.
+func noTradeReason(obs Observation) (string, bool) {
+	switch {
+	case obs.AbnormalVolatility:
+		return "abnormal volatility", true
+	case obs.Sideways:
+		return "sideways market", true
+	case obs.EntryExtended:
+		return "entry extended from trend", true
+	case !obs.ExecutionAligned:
+		return "execution not aligned", true
+	default:
+		return "", false
 	}
 }
 

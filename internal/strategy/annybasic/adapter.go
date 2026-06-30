@@ -53,7 +53,13 @@ func ObserveAt(main15m, execution1m []marketdata.Candle, executionIndex int) (Ob
 	avgVolume := averageVolume(exec, executionIndex, volumePeriod)
 	body := math.Abs(last.Close - last.Open)
 	mainFast, _ := emaSeries(mainCloses, cdcFastPeriod)
-	extended := atr > 0 && math.Abs(last.Close-mainFast[len(mainFast)-1]) > 1.5*atr
+	// EntryExtended measures how far price has run from the 15m fast EMA, so it
+	// must be compared against a 15m-scale ATR. Comparing that 15m deviation
+	// against the 1m ATR (roughly 10-15x smaller) made almost every bar read as
+	// extended, so the market-condition gate blocked whole validation windows and
+	// no setup was ever launchable.
+	mainATR := averageTrueRange(main, len(main)-1, volatilityPeriod)
+	extended := mainATR > 0 && math.Abs(last.Close-mainFast[len(mainFast)-1]) > 1.5*mainATR
 	abnormal := atr > 0 && trueRange(exec, executionIndex) > 3*atr
 	sideways := last.Close > 0 && cdcSpread(mainCloses)/last.Close < 0.001
 

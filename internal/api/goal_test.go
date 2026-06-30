@@ -250,6 +250,14 @@ func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
 			want: "market-condition filter",
 		},
 		{
+			name: "entry extended maps to market condition",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "entry extended from trend"},
+			},
+			want: "market-condition filter",
+		},
+		{
 			name: "cdc qqe alignment",
 			res: campaign.PaperResult{
 				Strategy:    "anny_basic_v1.2",
