@@ -929,6 +929,10 @@
         localStorage.removeItem("profile");
         if (stream) { stream.close(); stream = null; }
         stopPricePolling();
+        me = null;
+        // Reset the URL back to the landing page too, so logout actually bounces to
+        // the first page instead of leaving the address bar on a deep view.
+        history.replaceState({}, "", "/");
         $("nav").classList.add("hidden");
         $("logout").classList.add("hidden");
         $("who").classList.add("hidden");
