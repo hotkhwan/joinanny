@@ -61,9 +61,12 @@ type GoalRun struct {
 	Verdict          string    `json:"verdict" bson:"verdict"`
 	Validation       string    `json:"validation_window" bson:"validation_window"`
 	EstimatedEntries int       `json:"estimated_entries" bson:"estimated_entries"`
+	SignalSetups     int       `json:"signal_setups" bson:"signal_setups"`
 	Actionable       bool      `json:"actionable" bson:"actionable"`
 	NeedsPlanEdit    bool      `json:"needs_plan_edit" bson:"needs_plan_edit"`
 	BlockedReason    string    `json:"blocked_reason,omitempty" bson:"blocked_reason,omitempty"`
+	TopBlocker       string    `json:"top_blocker,omitempty" bson:"top_blocker,omitempty"`
+	PlanHint         string    `json:"plan_hint,omitempty" bson:"plan_hint,omitempty"`
 	CreatedAt        time.Time `json:"created_at" bson:"created_at"`
 }
 
@@ -347,6 +350,7 @@ func summarize(userKey string, req goalRequest, duration, interval, validation s
 		Verdict:          string(r.Verdict),
 		Validation:       validation,
 		EstimatedEntries: estimate,
+		SignalSetups:     r.Diagnostics.SetupsFound,
 		Actionable:       r.State.TradesClosed > 0,
 		CreatedAt:        time.Now().UTC(),
 	}
@@ -354,6 +358,8 @@ func summarize(userKey string, req goalRequest, duration, interval, validation s
 		stats.Actionable = false
 		stats.NeedsPlanEdit = true
 		stats.BlockedReason = noSetupReason(r)
+		stats.TopBlocker = r.Diagnostics.TopBlocker
+		stats.PlanHint = planEditHint(r)
 	}
 	return stats
 }
@@ -363,6 +369,27 @@ func noSetupReason(r campaign.PaperResult) string {
 		return "No CDC/QQE setup in this validation window"
 	}
 	return "No trade setup in this validation window"
+}
+
+func planEditHint(r campaign.PaperResult) string {
+	if !strings.HasPrefix(r.Strategy, "anny_basic") {
+		return "Try another duration, another symbol, or another strategy, then assess again."
+	}
+	if r.Diagnostics.SetupsFound > 0 && r.Diagnostics.BiasRejected > 0 {
+		return "CDC/QQE found a setup, but the AI side filter rejected it. Try disabling AI side pick or reassess when AI confidence is higher."
+	}
+	switch r.Diagnostics.TopBlocker {
+	case "CDC and QQE are not aligned":
+		return "Wait for CDC/QQE alignment, try another symbol, or reassess after a longer plan window."
+	case "no-trade market condition":
+		return "Market condition filter blocked the setup. Try another symbol or wait for a cleaner, less extended move."
+	case "indicator warmup":
+		return "Market data loaded but the model needed more aligned 15m/1m warmup. Reassess in a moment or try a longer duration."
+	case "":
+		return "Try another symbol, longer duration, or a non-ANNY Basic paper strategy before launching."
+	default:
+		return "Top blocker: " + r.Diagnostics.TopBlocker + ". Edit the symbol, duration, or side filter, then assess again."
+	}
 }
 
 func actionableGoalRun(r GoalRun) bool {
@@ -401,13 +428,19 @@ func goalSummaryText(goal campaign.Goal, r campaign.PaperResult, stats GoalRun, 
 	}
 	if stats.NeedsPlanEdit {
 		fmt.Fprintf(&b, "\n📊 Plan assessment on real %s candles: edit plan\n", r.Symbol)
-		fmt.Fprintf(&b, "%s. Market data loaded, but no paper result is launchable from this window. Estimated entries needed by goal math: %d. Try a longer validation window, another duration, another symbol, or another strategy.",
-			stats.BlockedReason, stats.EstimatedEntries)
+		fmt.Fprintf(&b, "%s. Market data loaded, but no paper result is launchable from this window. Entries needed by goal math: %d. Strategy setups found: %d.",
+			stats.BlockedReason, stats.EstimatedEntries, stats.SignalSetups)
+		if stats.TopBlocker != "" {
+			fmt.Fprintf(&b, " Top blocker: %s.", stats.TopBlocker)
+		}
+		if stats.PlanHint != "" {
+			fmt.Fprintf(&b, " Next edit: %s", stats.PlanHint)
+		}
 		return b.String()
 	}
 	fmt.Fprintf(&b, "\n📊 Paper run on real %s candles (no real orders): %s\n", r.Symbol, verdict)
 	if stats.EstimatedEntries > 0 {
-		fmt.Fprintf(&b, "Estimated entries needed: %d\n", stats.EstimatedEntries)
+		fmt.Fprintf(&b, "Entries needed by goal math: %d\n", stats.EstimatedEntries)
 	}
 	fmt.Fprintf(&b, "Trades: %d (%d win / %d loss) · Win rate: %.0f%% · Final PnL: %s USDT",
 		r.State.TradesClosed, r.Wins, r.Losses, r.WinRatePct, r.State.RealizedPnL.String())

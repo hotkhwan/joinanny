@@ -213,7 +213,13 @@ func TestAnnyBasicGoalPreservesRequestedDuration(t *testing.T) {
 	if estimate, _ := stats["estimated_entries"].(float64); estimate <= 0 {
 		t.Fatalf("estimated entries = %v, want positive estimate", stats["estimated_entries"])
 	}
-	if output, _ := out["output"].(string); !strings.Contains(output, "edit plan") || !strings.Contains(output, "Market data loaded") || !strings.Contains(output, "Estimated entries needed") {
+	if _, ok := stats["signal_setups"].(float64); !ok {
+		t.Fatalf("signal_setups missing from stats: %v", stats)
+	}
+	if hint, _ := stats["plan_hint"].(string); strings.TrimSpace(hint) == "" {
+		t.Fatalf("plan hint = %q, want edit guidance", hint)
+	}
+	if output, _ := out["output"].(string); !strings.Contains(output, "edit plan") || !strings.Contains(output, "Market data loaded") || !strings.Contains(output, "Entries needed") || !strings.Contains(output, "Strategy setups found") {
 		t.Fatalf("output = %q, want edit-plan guidance with entry estimate", output)
 	}
 	hreq := httptest.NewRequest(http.MethodGet, "/api/goal/history", nil)

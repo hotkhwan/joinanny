@@ -53,13 +53,17 @@ OHLC candles.
 Because CDC/QQE setups are sparse, the dashboard paper assessment uses an
 extended recent validation sample. `No CDC/QQE setup` means public Binance
 market data loaded successfully but no eligible setup was found in that sample.
-Market-data failures must surface as API errors, not as no-setup results.
+Market-data failures must surface as API errors, not as no-setup results. A
+no-setup assessment must show entries needed by goal math, strategy setups
+found, top blocker, and the next edit hint before Stage 3 / mission launch is
+allowed.
 
 ## Delivery Gates
 
 1. Run fee-adjusted walk-forward paper tests and publish both gains and losses.
-2. Paper assessment must report the estimated entries needed by goal math and
-   the actual trades found in the validation window.
+2. Paper assessment must report the entries needed by goal math, strategy
+   setups found, top blocker, next edit hint, and the actual trades found in the
+   validation window.
 3. If a validation window has no CDC/QQE setup, treat it as `edit plan`, not a
    launchable Mission or Flight Recorder result.
 4. Integrate with Mission confirmation and Flight Recorder on dry-run/testnet.

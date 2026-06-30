@@ -1328,6 +1328,9 @@
       function planEditReason(st) {
         return (st && st.blocked_reason) || "No actionable setup in this validation window";
       }
+      function planHint(st) {
+        return (st && st.plan_hint) || "";
+      }
       function verdictText(v, st) {
         if (st && st.blocked_reason) return "Edit plan: " + st.blocked_reason;
         if ((st && st.strategy || "").startsWith("anny_basic") && Number((st && st.trades) || 0) === 0) return "Edit plan: No CDC/QQE setup in this validation window";
@@ -1378,7 +1381,8 @@
         }
         const cells = needsEdit ? [
           ["Market data", "OK", "up"],
-          ["Est. entries", String(st.estimated_entries || "—"), ""],
+          ["Entries needed", String(st.estimated_entries || "—"), ""],
+          ["Setups found", String(st.signal_setups || 0), Number(st.signal_setups || 0) > 0 ? "up" : "down"],
           ["Trades found", String(st.trades || 0), "down"],
           ["Validation", st.validation_window || st.duration || "—", ""],
           ["Plan action", "Edit plan", "down"],
@@ -1389,7 +1393,7 @@
         ] : [
           ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%", ""],
           ["Trades", String(st.trades || 0), ""],
-          ["Est. entries", String(st.estimated_entries || "—"), ""],
+          ["Entries needed", String(st.estimated_entries || "—"), ""],
           ["W / L", (st.wins || 0) + " / " + (st.losses || 0), ""],
           ["Target hit", st.verdict === "target_reached" ? "Yes" : "No", st.verdict === "target_reached" ? "up" : "down"],
           ["Validation", st.validation_window || st.duration || "—", ""],
@@ -1399,7 +1403,11 @@
           ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ];
         $("bc-stats").innerHTML = cells.map(([k, v, cls]) => `<div class="bcard-cell"><div class="ck">${k}</div><div class="cv ${cls}">${escapeHtml(v)}</div></div>`).join("");
-        $("bc-verdict").textContent = verdictText(st.verdict, st);
+        const blocker = needsEdit && st.top_blocker ? "Top blocker: " + st.top_blocker : "";
+        const hint = needsEdit ? planHint(st) : "";
+        $("bc-verdict").innerHTML = escapeHtml(verdictText(st.verdict, st))
+          + (blocker ? `<br><span style="color:var(--muted)">${escapeHtml(blocker)}</span>` : "")
+          + (hint ? `<br><span style="color:var(--muted)">Next edit: ${escapeHtml(hint)}</span>` : "");
         $("g-card").classList.remove("hidden");
         $("g-review-actions").classList.remove("hidden");
         const launchable = canLaunchGoal(st);
@@ -1407,7 +1415,8 @@
         $("g-live").disabled = !launchable;
         if (needsEdit) {
           const aiNote = d.ai ? " " + d.ai : "";
-          goalMsg(planEditReason(st) + ". Edit the plan before Launch & confirm." + aiNote, false);
+          const hintNote = planHint(st) ? " Next: " + planHint(st) : "";
+          goalMsg(planEditReason(st) + ". Edit the plan before Launch & confirm." + hintNote + aiNote, false);
           $("g-confirm-out").classList.add("hidden");
           $("g-confirm-actions").classList.add("hidden");
           pendingMission = null; missionConfirmId = null;
@@ -1446,7 +1455,8 @@
       $("g-edit").onclick = () => { $("g-profit").focus(); $("view-orders").scrollIntoView({ behavior:"smooth", block:"start" }); };
       async function runLiveMission() {
         if (!canLaunchGoal(lastGoalStats)) {
-          goalMsg((lastGoalStats ? planEditReason(lastGoalStats) : "Paper assessment is not launch-ready") + ". Edit the plan and assess again.", false);
+          const hintNote = lastGoalStats && planHint(lastGoalStats) ? " Next: " + planHint(lastGoalStats) : "";
+          goalMsg((lastGoalStats ? planEditReason(lastGoalStats) : "Paper assessment is not launch-ready") + ". Edit the plan and assess again." + hintNote, false);
           $("g-edit").focus();
           return;
         }
