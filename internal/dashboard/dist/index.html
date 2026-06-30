@@ -1377,7 +1377,11 @@
       // armed; surface the outcome immediately on a terminal state.
       function applyArmedStatus(m) {
         if (!m) return;
-        if (m.status === "armed") { armedMission = m; renderArmedCountdown(); return; }
+        // Still "armed" in the DB but the window already passed (watcher not yet
+        // swept it) — show it as expired rather than a stuck "armed · expired".
+        const past = m.expires_at && new Date(m.expires_at).getTime() <= Date.now();
+        if (m.status === "armed" && !past) { armedMission = m; renderArmedCountdown(); return; }
+        if (m.status === "armed" && past) m = Object.assign({}, m, { status: "expired" });
         stopArmedPolling();
         armedMissionId = null; armedMission = null;
         $("g-armed-actions").classList.add("hidden");

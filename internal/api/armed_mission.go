@@ -70,6 +70,13 @@ type ArmedMissionStore interface {
 	MarkExpired(ctx context.Context, id string, now time.Time) (ArmedMission, bool, error)
 	MarkTriggered(ctx context.Context, id, side, reason, confirmationID string, now time.Time) (ArmedMission, bool, error)
 	SetTriggeredConfirmation(ctx context.Context, id, confirmationID string, now time.Time) (ArmedMission, bool, error)
+	// ExtendWindow lengthens a still-armed mission's wait window (e.g. re-arming the
+	// same symbol with a longer Plan duration). Only updates when still armed.
+	ExtendWindow(ctx context.Context, id, durationKey string, windowSeconds int64, expiresAt time.Time, purgeAt *time.Time, now time.Time) (ArmedMission, bool, error)
+	// ExpireStale marks any still-"armed" rows whose window already passed as
+	// expired — cleaning up orphans whose watcher died (e.g. a restart that did not
+	// re-watch them). Returns how many were swept.
+	ExpireStale(ctx context.Context, now time.Time) (int, error)
 }
 
 type memArmedMissions struct {
@@ -194,6 +201,37 @@ func (m *memArmedMissions) SetTriggeredConfirmation(_ context.Context, id, confi
 	return row, true, nil
 }
 
+func (m *memArmedMissions) ExtendWindow(_ context.Context, id, durationKey string, windowSeconds int64, expiresAt time.Time, purgeAt *time.Time, now time.Time) (ArmedMission, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	row, ok := m.rows[id]
+	if !ok || row.Status != ArmedMissionStatusArmed {
+		return row, false, nil
+	}
+	row.Duration = durationKey
+	row.DurationWindowSeconds = windowSeconds
+	row.ExpiresAt = expiresAt
+	row.PurgeAt = purgeAt
+	row.UpdatedAt = now
+	m.rows[id] = row
+	return row, true, nil
+}
+
+func (m *memArmedMissions) ExpireStale(_ context.Context, now time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, row := range m.rows {
+		if row.Status == ArmedMissionStatusArmed && !now.Before(row.ExpiresAt) {
+			row.Status = ArmedMissionStatusExpired
+			row.UpdatedAt = now
+			m.rows[id] = row
+			n++
+		}
+	}
+	return n, nil
+}
+
 func sortArmedMissions(rows []ArmedMission) {
 	for i := 1; i < len(rows); i++ {
 		for j := i; j > 0 && rows[j].CreatedAt.After(rows[j-1].CreatedAt); j-- {
@@ -275,6 +313,14 @@ func (s *Server) armANNYBasicMission(c fiber.Ctx, req goalRequest, userID int64,
 			continue
 		}
 		if row.Symbol == symbol && row.Strategy == annybasic.ID {
+			// Re-arm of the same symbol: if the new plan asks for a longer window,
+			// extend it (so switching 15m → ∞ takes effect without a manual disarm).
+			newExpiry := now.Add(window)
+			if newExpiry.After(row.ExpiresAt) {
+				if extended, ok, err := s.armedMissions.ExtendWindow(c.Context(), row.ID, durationKey, int64(window.Seconds()), newExpiry, armedMissionPurgeAt(newExpiry), now); err == nil && ok {
+					row = extended
+				}
+			}
 			if runtimeCtx := s.runtimeContext(); runtimeCtx != nil {
 				s.startArmedMissionWatcher(runtimeCtx, row)
 			}
@@ -399,7 +445,15 @@ func (s *Server) startArmedMissionWatchers(ctx context.Context) int {
 	if s.armedMissions == nil {
 		return 0
 	}
-	rows, err := s.armedMissions.ListActive(ctx, time.Now().UTC())
+	now := time.Now().UTC()
+	// Sweep orphans first: rows still "armed" past their window whose watcher died
+	// (e.g. before this boot) would otherwise never be marked expired.
+	if swept, err := s.armedMissions.ExpireStale(ctx, now); err != nil {
+		s.logger.Warn("armed mission expire-stale failed", "error", err)
+	} else if swept > 0 {
+		s.logger.Info("armed missions expired on boot (stale orphans)", "count", swept)
+	}
+	rows, err := s.armedMissions.ListActive(ctx, now)
 	if err != nil {
 		s.logger.Warn("armed mission rehydrate failed", "error", err)
 		return 0

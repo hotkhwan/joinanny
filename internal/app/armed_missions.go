@@ -137,6 +137,36 @@ func (m *mongoArmedMissions) SetTriggeredConfirmation(ctx context.Context, id, c
 	}}})
 }
 
+func (m *mongoArmedMissions) ExtendWindow(ctx context.Context, id, durationKey string, windowSeconds int64, expiresAt time.Time, purgeAt *time.Time, now time.Time) (api.ArmedMission, bool, error) {
+	set := bson.D{
+		{Key: "duration", Value: durationKey},
+		{Key: "duration_window_seconds", Value: windowSeconds},
+		{Key: "expires_at", Value: expiresAt},
+		{Key: "updated_at", Value: now},
+	}
+	if purgeAt != nil {
+		set = append(set, bson.E{Key: "purge_at", Value: *purgeAt})
+	}
+	return m.transition(ctx, bson.D{
+		{Key: "_id", Value: id},
+		{Key: "status", Value: api.ArmedMissionStatusArmed},
+	}, bson.D{{Key: "$set", Value: set}})
+}
+
+func (m *mongoArmedMissions) ExpireStale(ctx context.Context, now time.Time) (int, error) {
+	res, err := m.coll.UpdateMany(ctx, bson.D{
+		{Key: "status", Value: api.ArmedMissionStatusArmed},
+		{Key: "expires_at", Value: bson.D{{Key: "$lte", Value: now}}},
+	}, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "status", Value: api.ArmedMissionStatusExpired},
+		{Key: "updated_at", Value: now},
+	}}})
+	if err != nil {
+		return 0, err
+	}
+	return int(res.ModifiedCount), nil
+}
+
 func (m *mongoArmedMissions) transition(ctx context.Context, filter bson.D, update bson.D) (api.ArmedMission, bool, error) {
 	var mission api.ArmedMission
 	err := m.coll.FindOneAndUpdate(ctx, filter, update, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&mission)

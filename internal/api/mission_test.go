@@ -287,6 +287,54 @@ func TestArmedMissionDisarmAndExpirePlaceNoOrder(t *testing.T) {
 	}
 }
 
+func TestArmedMissionExtendWindowAndExpireStale(t *testing.T) {
+	store := newMemArmedMissions()
+	now := time.Now().UTC()
+	shortExp := now.Add(15 * time.Minute)
+	mission := ArmedMission{
+		ID: "arm_extend", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT", Strategy: annybasic.ID,
+		Duration: "15m", DurationWindowSeconds: 900, Status: ArmedMissionStatusArmed, IdempotencyKey: "k1",
+		ArmedAt: now, ExpiresAt: shortExp, PurgeAt: armedMissionPurgeAt(shortExp), CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.Save(context.Background(), mission); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// Re-arm with a longer (24h) window extends the existing mission.
+	longExp := now.Add(24 * time.Hour)
+	extended, ok, err := store.ExtendWindow(context.Background(), mission.ID, "24h", 86400, longExp, armedMissionPurgeAt(longExp), now.Add(time.Second))
+	if err != nil || !ok {
+		t.Fatalf("extend = ok:%v err:%v", ok, err)
+	}
+	if !extended.ExpiresAt.Equal(longExp) || extended.Duration != "24h" || extended.DurationWindowSeconds != 86400 {
+		t.Fatalf("extended window = %+v, want 24h/longExp", extended)
+	}
+	if extended.PurgeAt == nil || !extended.PurgeAt.Equal(longExp.Add(armedMissionRetention)) {
+		t.Fatalf("extended purge_at = %v, want longExp + retention", extended.PurgeAt)
+	}
+
+	// A stale armed orphan (window already passed) plus a live one: ExpireStale
+	// sweeps only the stale orphan.
+	stale := mission
+	stale.ID = "arm_stale"
+	stale.IdempotencyKey = "k2"
+	stale.ExpiresAt = now.Add(-time.Minute)
+	if err := store.Save(context.Background(), stale); err != nil {
+		t.Fatalf("save stale: %v", err)
+	}
+	swept, err := store.ExpireStale(context.Background(), now)
+	if err != nil || swept != 1 {
+		t.Fatalf("ExpireStale swept=%d err=%v, want 1", swept, err)
+	}
+	got, _, _ := store.Get(context.Background(), stale.ID)
+	if got.Status != ArmedMissionStatusExpired {
+		t.Fatalf("stale orphan status = %q, want expired", got.Status)
+	}
+	live, _, _ := store.Get(context.Background(), mission.ID)
+	if live.Status != ArmedMissionStatusArmed {
+		t.Fatalf("live mission status = %q, want still armed", live.Status)
+	}
+}
+
 func TestArmedMissionRehydrateAndTriggerIdempotency(t *testing.T) {
 	store := newMemArmedMissions()
 	now := time.Now().UTC()
