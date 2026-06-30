@@ -927,7 +927,6 @@
       $("logout").onclick = () => {
         localStorage.removeItem("token");
         localStorage.removeItem("profile");
-        if (stream) { stream.close(); stream = null; }
         stopPricePolling();
         me = null;
         // Reset the URL back to the landing page too, so logout actually bounces to

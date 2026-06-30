@@ -167,3 +167,49 @@ test("goal run with AI toggle falls back gracefully (no key configured)", async 
   await expect(page.locator("#g-card")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("#g-msg")).toContainText("rule-based");
 });
+
+test("goal run shows RR/edge transparency, the fluke guard, and relabeled actions", async ({ page }) => {
+  await registerAndLogin(page);
+  await gotoTrade(page);
+
+  await page.fill("#g-profit", "5");
+  await page.fill("#g-capital", "100");
+  await page.fill("#g-risk", "30");
+  await page.fill("#g-leverage", "50");
+  await page.selectOption("#g-symbol", "BTC");
+  await page.selectOption("#g-strategy", "ema");
+  await page.selectOption("#g-duration", "unlimited");
+  await page.click("#g-run");
+
+  const card = page.locator("#g-card");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  const stats = page.locator("#bc-stats");
+  // New transparency cells: structural reward:risk and the per-trade edge.
+  await expect(stats).toContainText("RR");
+  await expect(stats).toContainText("1 : 2");
+  await expect(stats).toContainText("Edge / trade");
+  await expect(stats).toContainText("USDT");
+  // Min-sample fluke guard: the stub only yields a tiny winning sample, so even a
+  // 100%-win run is NOT launch-ready (needs >= 5 trades of positive edge).
+  await expect(stats).toContainText("Launch ready");
+  await expect(stats).toContainText("No");
+  // Relabeled action: the edit button now reads "Update plan".
+  await expect(page.locator("#g-edit")).toHaveText("Update plan");
+  // Next carries the new label (gated behind a Binance key in this harness — the
+  // correct real-trading guard).
+  await expect(page.locator("#g-live")).toHaveText("Next →");
+});
+
+test("logout bounces back to the landing page and resets the URL", async ({ page }) => {
+  await registerAndLogin(page);
+  await gotoTrade(page); // leave the address bar on a deep view (/orders)
+  await expect(page).toHaveURL(/\/orders$/);
+
+  await page.click("#logout");
+
+  await expect(page.locator("#view-login")).toBeVisible();
+  await expect(page.locator("#nav")).toBeHidden();
+  await expect(page.locator("#logout")).toBeHidden();
+  // The URL must return to the root, not stay on the deep view.
+  await expect(page).toHaveURL(/\/$/);
+});
