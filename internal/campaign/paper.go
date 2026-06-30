@@ -3,7 +3,9 @@ package campaign
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
+	"strings"
 
 	"bottrade/internal/backtest"
 	"bottrade/internal/decimal"
@@ -73,19 +75,32 @@ type PaperTrade struct {
 	RunningPnL decimal.Decimal `json:"running_pnl"`
 }
 
+// PaperDiagnostics explains why a paper run did or did not become launchable.
+// It reports coarse strategy facts only; it does not expose account data,
+// private keys, or raw order payloads.
+type PaperDiagnostics struct {
+	ObservedBars  int            `json:"observed_bars"`
+	SetupsFound   int            `json:"setups_found"`
+	BiasRejected  int            `json:"bias_rejected"`
+	Blocked       map[string]int `json:"blocked,omitempty"`
+	TopBlocker    string         `json:"top_blocker,omitempty"`
+	topBlockCount int
+}
+
 // PaperResult bundles the run for the dashboard.
 type PaperResult struct {
-	Goal       Goal         `json:"goal"`
-	Symbol     string       `json:"symbol"`
-	Strategy   string       `json:"strategy"`
-	Bias       PaperBias    `json:"bias"`
-	Bars       int          `json:"bars"`
-	Trades     []PaperTrade `json:"trades"`
-	State      State        `json:"state"`
-	Verdict    Verdict      `json:"verdict"`
-	Wins       int          `json:"wins"`
-	Losses     int          `json:"losses"`
-	WinRatePct float64      `json:"win_rate_pct"`
+	Goal        Goal             `json:"goal"`
+	Symbol      string           `json:"symbol"`
+	Strategy    string           `json:"strategy"`
+	Bias        PaperBias        `json:"bias"`
+	Bars        int              `json:"bars"`
+	Trades      []PaperTrade     `json:"trades"`
+	State       State            `json:"state"`
+	Verdict     Verdict          `json:"verdict"`
+	Wins        int              `json:"wins"`
+	Losses      int              `json:"losses"`
+	WinRatePct  float64          `json:"win_rate_pct"`
+	Diagnostics PaperDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // StrategyFor maps a name to a backtest direction strategy used for paper runs.
@@ -205,9 +220,11 @@ func RunPaper(cfg PaperConfig, candles []marketdata.Candle) (PaperResult, error)
 		if cfg.Strategy == annybasic.ID {
 			observation, observeErr := annybasic.ObserveAt(cfg.MainCandles, candles, i)
 			if observeErr != nil {
+				result.Diagnostics.recordBlock("indicator warmup")
 				i++
 				continue
 			}
+			result.Diagnostics.ObservedBars++
 			modelDecision := annybasic.Evaluate(observation, annybasic.State{
 				TradesClosed:      result.State.TradesClosed,
 				ConsecutiveLosses: consecutiveLosses,
@@ -218,10 +235,21 @@ func RunPaper(cfg PaperConfig, candles []marketdata.Candle) (PaperResult, error)
 				return finalize(result), nil
 			}
 			side = string(modelDecision.Side)
+			if side == "" {
+				result.Diagnostics.recordBlock(modelDecision.Reason)
+			} else {
+				result.Diagnostics.SetupsFound++
+			}
 		} else {
 			side = signalSide(strat.Evaluate(closes[:i+1]))
 		}
-		if side == "" || !biasAllows(cfg.Bias, side) {
+		if side == "" {
+			i++
+			continue
+		}
+		if !biasAllows(cfg.Bias, side) {
+			result.Diagnostics.BiasRejected++
+			result.Diagnostics.recordBlock("AI side filter")
 			i++
 			continue
 		}
@@ -420,7 +448,42 @@ func finalize(r PaperResult) PaperResult {
 	if r.Trades == nil {
 		r.Trades = []PaperTrade{}
 	}
+	r.Diagnostics.finalize()
 	return r
+}
+
+func (d *PaperDiagnostics) recordBlock(reason string) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "no actionable setup"
+	}
+	if d.Blocked == nil {
+		d.Blocked = make(map[string]int)
+	}
+	d.Blocked[reason]++
+	count := d.Blocked[reason]
+	if count > d.topBlockCount || (count == d.topBlockCount && (d.TopBlocker == "" || reason < d.TopBlocker)) {
+		d.TopBlocker = reason
+		d.topBlockCount = count
+	}
+}
+
+func (d *PaperDiagnostics) finalize() {
+	if len(d.Blocked) == 0 {
+		return
+	}
+	reasons := make([]string, 0, len(d.Blocked))
+	for reason := range d.Blocked {
+		reasons = append(reasons, reason)
+	}
+	sort.Strings(reasons)
+	for _, reason := range reasons {
+		count := d.Blocked[reason]
+		if count > d.topBlockCount || (count == d.topBlockCount && (d.TopBlocker == "" || reason < d.TopBlocker)) {
+			d.TopBlocker = reason
+			d.topBlockCount = count
+		}
+	}
 }
 
 // floatOf converts a decimal USDT amount to float64 for simulation math,

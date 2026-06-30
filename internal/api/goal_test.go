@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,7 +11,18 @@ import (
 	"testing"
 
 	"bottrade/internal/auth"
+	"bottrade/internal/campaign"
+	"bottrade/internal/signals"
 )
+
+type fixedAdvisor struct {
+	decision signals.Decision
+	err      error
+}
+
+func (f fixedAdvisor) Decide(context.Context, signals.MarketSignal) (signals.Decision, error) {
+	return f.decision, f.err
+}
 
 // stubKlines serves an uptrending klines series so the EMA strategy takes longs
 // whose take-profit is hit — a deterministic "goal reached" paper run.
@@ -116,6 +128,12 @@ func TestGoalRunRealPaper(t *testing.T) {
 	if stats["leverage_use_pct"] != float64(25) {
 		t.Fatalf("leverage use = %v, want 25", stats["leverage_use_pct"])
 	}
+	if stats["actionable"] != true || stats["needs_plan_edit"] == true {
+		t.Fatalf("actionability = actionable:%v needs_plan_edit:%v, want actionable run", stats["actionable"], stats["needs_plan_edit"])
+	}
+	if estimate, _ := stats["estimated_entries"].(float64); estimate <= 0 {
+		t.Fatalf("estimated entries = %v, want positive estimate", stats["estimated_entries"])
+	}
 	if out["output"] == nil || !strings.Contains(out["output"].(string), "Paper run on real") {
 		t.Fatalf("missing paper-run summary text: %v", out["output"])
 	}
@@ -163,5 +181,126 @@ func TestPlanDurationExecutionIntervals(t *testing.T) {
 		if got := allowedDurations[duration]; got != expected {
 			t.Errorf("%s spec = %+v, want %+v", duration, got, expected)
 		}
+	}
+}
+
+func TestAnnyBasicGoalPreservesRequestedDuration(t *testing.T) {
+	server, token := goalServer(t)
+
+	code, out := postGoal(t, server, token, map[string]any{
+		"profit": 10, "capital": 100, "capital_risk_pct": 50, "leverage_use_pct": 50,
+		"symbol": "BTC", "strategy": "anny_basic", "duration": "1h",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("anny goal status = %d (%v)", code, out)
+	}
+	stats, _ := out["stats"].(map[string]any)
+	if stats == nil {
+		t.Fatalf("no stats in response: %v", out)
+	}
+	if stats["duration"] != "1h" || stats["interval"] != "1m" {
+		t.Fatalf("plan/execution timeframe = %v/%v, want 1h/1m", stats["duration"], stats["interval"])
+	}
+	if stats["validation_window"] != "90 x 1m" {
+		t.Fatalf("validation window = %v, want actual loaded candles 90 x 1m", stats["validation_window"])
+	}
+	if stats["actionable"] != false || stats["needs_plan_edit"] != true {
+		t.Fatalf("actionability = actionable:%v needs_plan_edit:%v, want plan edit", stats["actionable"], stats["needs_plan_edit"])
+	}
+	if reason, _ := stats["blocked_reason"].(string); strings.TrimSpace(reason) == "" || strings.Contains(reason, "No CDC/QQE setup") {
+		t.Fatalf("blocked reason = %q, want a specific ANNY Basic blocker", reason)
+	}
+	if estimate, _ := stats["estimated_entries"].(float64); estimate <= 0 {
+		t.Fatalf("estimated entries = %v, want positive estimate", stats["estimated_entries"])
+	}
+	if _, ok := stats["signal_setups"].(float64); !ok {
+		t.Fatalf("signal_setups missing from stats: %v", stats)
+	}
+	if hint, _ := stats["plan_hint"].(string); strings.TrimSpace(hint) == "" {
+		t.Fatalf("plan hint = %q, want edit guidance", hint)
+	}
+	if output, _ := out["output"].(string); !strings.Contains(output, "edit plan") || !strings.Contains(output, "Market data loaded") || !strings.Contains(output, "Entries needed") || !strings.Contains(output, "Launchable setups found") {
+		t.Fatalf("output = %q, want edit-plan guidance with entry estimate", output)
+	}
+	hreq := httptest.NewRequest(http.MethodGet, "/api/goal/history", nil)
+	hreq.Header.Set("Authorization", "Bearer "+token)
+	hresp, _ := server.App().Test(hreq)
+	defer hresp.Body.Close()
+	var hist struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	json.NewDecoder(hresp.Body).Decode(&hist)
+	if len(hist.Runs) != 0 {
+		t.Fatalf("no-setup assessment should not persist as a paper mission, got history: %+v", hist.Runs)
+	}
+}
+
+func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
+	tests := []struct {
+		name string
+		res  campaign.PaperResult
+		want string
+	}{
+		{
+			name: "market condition",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "no-trade market condition"},
+			},
+			want: "market-condition filter",
+		},
+		{
+			name: "entry extended maps to market condition",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "entry extended from trend"},
+			},
+			want: "market-condition filter",
+		},
+		{
+			name: "cdc qqe alignment",
+			res: campaign.PaperResult{
+				Strategy:    "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "CDC and QQE are not aligned"},
+			},
+			want: "CDC/QQE did not align",
+		},
+		{
+			name: "ai side filter",
+			res: campaign.PaperResult{
+				Strategy: "anny_basic_v1.2",
+				Diagnostics: campaign.PaperDiagnostics{
+					SetupsFound:  1,
+					BiasRejected: 1,
+					TopBlocker:   "AI side filter",
+				},
+			},
+			want: "AI side filter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := noSetupReason(tt.res)
+			if !strings.Contains(got, tt.want) || strings.Contains(got, "No CDC/QQE setup") {
+				t.Fatalf("noSetupReason() = %q, want %q without generic CDC/QQE text", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAIBiasLowConfidenceUsesBothSides(t *testing.T) {
+	cfg := testConfigWith(t, nil)
+	server := NewServer(cfg, nil, testLogger(), WithAdvisor(fixedAdvisor{decision: signals.Decision{
+		Action:            signals.ActionOpen,
+		Side:              "long",
+		ConfidencePercent: 35,
+	}}))
+
+	bias, note := server.aiBias(context.Background(), "tg:468848033", "BTCUSDT", 60000)
+	if bias != campaign.BiasBoth {
+		t.Fatalf("bias = %q, want both", bias)
+	}
+	if !strings.Contains(note, "confidence 35% is low") {
+		t.Fatalf("note = %q, want low-confidence explanation", note)
 	}
 }

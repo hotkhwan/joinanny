@@ -117,6 +117,69 @@ func TestRecentQQECrossUsesFreshnessWindow(t *testing.T) {
 	}
 }
 
+func TestEntryExtendedScaledToMainTimeframe(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// 15m main: gentle uptrend with a real per-bar range, so the 15m ATR is a
+	// few price units while the 1m execution series below is nearly flat.
+	main := make([]marketdata.Candle, 120)
+	for i := range main {
+		c := 100 + 0.2*float64(i)
+		main[i] = marketdata.Candle{
+			OpenTime: base.Add(time.Duration(i) * 15 * time.Minute),
+			Open:     c - 0.4, High: c + 1.0, Low: c - 1.0, Close: c, Volume: 100,
+		}
+	}
+	fast, ok := emaSeries(candleCloses(main), cdcFastPeriod)
+	if !ok {
+		t.Fatal("main fast EMA not ready")
+	}
+	mainFast := fast[len(fast)-1]
+	mainATR := averageTrueRange(main, len(main)-1, volatilityPeriod)
+	if mainATR <= 0 {
+		t.Fatalf("main ATR = %.4f, want > 0", mainATR)
+	}
+
+	// Calm 1m execution candles parked at a chosen distance from the 15m fast EMA.
+	exec := func(price float64) []marketdata.Candle {
+		out := make([]marketdata.Candle, 60)
+		start := base.Add(120 * 15 * time.Minute)
+		for i := range out {
+			out[i] = marketdata.Candle{
+				OpenTime: start.Add(time.Duration(i) * time.Minute),
+				Open:     price - 0.02, High: price + 0.02, Low: price - 0.02,
+				Close: price, Volume: 100,
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name         string
+		price        float64
+		wantExtended bool
+	}{
+		// 1.0x the 15m ATR away: under the old 1m-ATR comparison the tiny 1m ATR
+		// flagged this as extended and blocked the window; scaled to the 15m ATR
+		// it correctly is not.
+		{"within main-timeframe ATR is not extended", mainFast + mainATR, false},
+		// 3x the 15m ATR away: a genuinely over-extended entry must still block.
+		{"beyond 1.5x main-timeframe ATR is extended", mainFast + 3*mainATR, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candles := exec(tt.price)
+			obs, err := ObserveAt(main, candles, len(candles)-1)
+			if err != nil {
+				t.Fatalf("ObserveAt: %v", err)
+			}
+			if obs.EntryExtended != tt.wantExtended {
+				t.Fatalf("EntryExtended = %v, want %v (deviation vs 1.5x main ATR %.4f)",
+					obs.EntryExtended, tt.wantExtended, 1.5*mainATR)
+			}
+		})
+	}
+}
+
 func sequence(start, step float64, count int) []float64 {
 	out := make([]float64, count)
 	for i := range out {

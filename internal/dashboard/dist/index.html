@@ -203,10 +203,13 @@
       .bcard-tag.long { color: var(--profit); } .bcard-tag.short { color: var(--loss); }
       .bcard-tag.ai { color: var(--primary); }
       .bcard-net { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.6px; color: #E9B500; background: rgba(240, 185, 11, 0.12); border: 1px solid rgba(240, 185, 11, 0.4); border-radius: 0.4rem; padding: 0.15rem 0.4rem; flex: 0 0 auto; }
+      .bcard.plan-edit { border-color: rgba(246, 70, 93, 0.38); background: linear-gradient(180deg, rgba(45, 16, 26, 0.48), rgba(5, 8, 22, 0.62)); }
+      .bcard.plan-edit .bcard-net { color: #F6465D; background: rgba(246, 70, 93, 0.12); border-color: rgba(246, 70, 93, 0.42); }
       .bcard-mid { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.6rem; margin: 0.85rem 0 0.1rem; }
       .bcard-lbl { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.1rem; }
       .bcard-num { font-size: 2.1rem; font-weight: 700; line-height: 1.05; }
       .bcard-num.up { color: var(--profit); } .bcard-num.down { color: var(--loss); }
+      .bcard-num.status { color: var(--text); font-size: 1.28rem; line-height: 1.22; overflow-wrap: anywhere; }
       .bcard-roi { font-size: 0.82rem; margin-top: 0.15rem; }
       .bcard-roi.up { color: var(--profit); } .bcard-roi.down { color: var(--loss); }
       .bcard-spark { flex: 0 0 auto; width: 48%; max-width: 14rem; height: 4.4rem; align-self: flex-end; }
@@ -284,10 +287,10 @@
       .flight .fpnl { margin-left: auto; font-family: var(--font-mono); font-weight: 600; }
       .fhash { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); padding-bottom: 0.5rem; border-bottom: 1px solid #ffffff14; }
       .fhash:last-child { border-bottom: 0; }
-      .hidden { display: none; }
+      .hidden { display: none !important; }
       .flow-step { display:flex; align-items:center; gap:0.55rem; margin-bottom:0.35rem; }
       .flow-no { display:inline-flex; align-items:center; justify-content:center; width:1.55rem; height:1.55rem; border-radius:50%; background:rgba(0,245,255,.12); border:1px solid var(--card-border); color:var(--primary); font:700 .75rem var(--font-mono); }
-      .mission-actions { display:flex; gap:.55rem; margin-top:.8rem; }
+      .mission-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(7rem,1fr)); gap:.55rem; margin-top:.8rem; }
       .position-card { border:1px solid var(--card-border); border-radius:.8rem; padding:.8rem; margin-top:.65rem; background:rgba(5,8,22,.45); }
       .position-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; margin:.65rem 0; }
       .position-grid .pk { color:var(--muted); font-size:.68rem; }
@@ -472,17 +475,17 @@
             <div class="msg" id="g-msg"></div>
           </div>
           <div id="g-card" class="bcard hidden">
-            <div class="flow-step"><span class="flow-no">2</span><strong>Review paper assessment</strong></div>
+            <div class="flow-step"><span class="flow-no">2</span><strong id="g-card-title">Review paper assessment</strong></div>
             <div class="bcard-top">
               <div>
                 <div class="bcard-sym" id="bc-sym">—</div>
                 <div class="bcard-tags" id="bc-tags"></div>
               </div>
-              <span class="bcard-net" title="Paper run — simulated on real Binance candles. No real orders, no real money. Just proof of how the strategy would have done.">PAPER ⓘ</span>
+              <span class="bcard-net" id="bc-mode" title="Paper run — simulated on real Binance candles. No real orders, no real money. Just proof of how the strategy would have done.">PAPER ⓘ</span>
             </div>
             <div class="bcard-mid">
               <div>
-                <div class="bcard-lbl">Estimated net PnL (USDT)</div>
+                <div class="bcard-lbl" id="bc-pnl-label">Estimated net PnL (USDT)</div>
                 <div class="bcard-num mono" id="bc-pnl">+0.00</div>
                 <div class="bcard-roi mono" id="bc-roi"></div>
               </div>
@@ -493,6 +496,8 @@
             <div id="g-review-actions" class="mission-actions hidden">
               <button class="primary" id="g-live" type="button">Launch testnet mission →</button>
               <button class="ghost" id="g-edit" type="button">Edit plan</button>
+              <button class="ghost hidden" id="g-try-auto" type="button">Try Auto</button>
+              <button class="ghost hidden" id="g-try-rsi" type="button">Try RSI</button>
             </div>
           </div>
           <details id="g-tradeswrap" class="hidden" style="margin-top:0.7rem"><summary style="cursor:pointer;color:var(--muted);font-size:0.85rem">Trades</summary><div id="g-trades"></div></details>
@@ -1302,6 +1307,7 @@
       function goalMsg(t, ok) { $("g-msg").textContent = t || ""; $("g-msg").style.color = ok ? "var(--profit)" : "var(--loss)"; }
       let pendingMission = null;
       let activeMission = JSON.parse(localStorage.getItem("activeMission") || "null");
+      let lastGoalStats = null;
       function durationMs(v) {
         const m = /^(\d+)(m|h|w)$/.exec(v || "");
         if (!m) return 0;
@@ -1315,7 +1321,21 @@
         box.classList.remove("hidden");
       }
       function fmtPnl(v) { const n = Number(v) || 0; return (n >= 0 ? "+" : "") + (Math.round(n * 100) / 100); }
-      function verdictText(v) {
+      function goalNeedsEdit(st) {
+        return !!(st && (st.needs_plan_edit || Number(st.trades || 0) === 0));
+      }
+      function canLaunchGoal(st) {
+        return !!(st && !goalNeedsEdit(st) && (st.actionable === true || Number(st.trades || 0) > 0) && st.verdict === "target_reached");
+      }
+      function planEditReason(st) {
+        return (st && st.blocked_reason) || "No actionable setup in this validation window";
+      }
+      function planHint(st) {
+        return (st && st.plan_hint) || "";
+      }
+      function verdictText(v, st) {
+        if (st && st.blocked_reason) return "Edit plan: " + st.blocked_reason;
+        if ((st && st.strategy || "").startsWith("anny_basic") && Number((st && st.trades) || 0) === 0) return "Edit plan: No launchable ANNY Basic setup in this validation window";
         return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: capital risk limit", max_trades: "⏹ Stopped: max trades", continue: "Target not reached in this window" })[v] || v || "";
       }
       // bcardSpark draws a Binance-style area sparkline (line + soft fill), green
@@ -1331,21 +1351,51 @@
         const area = `${x(0).toFixed(1)},${h - pad} ${pts} ${x(vals.length - 1).toFixed(1)},${h - pad}`;
         return `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polygon points="${area}" fill="${fill}"/><polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
       }
-      function renderGoalResult(d) {
+      function renderGoalResult(d, request) {
         const st = d.stats || {};
+        lastGoalStats = st;
+        const needsEdit = goalNeedsEdit(st);
         const pnl = Number(st.realized_pnl || 0), up = pnl >= 0;
         const cap = Number(st.capital || 100) || 100;
         const roi = (pnl / cap) * 100;
         $("bc-sym").textContent = st.symbol || normSym($("g-symbol").value) || "—";
-        const tags = [`<span class="bcard-tag">${escapeHtml(st.strategy || "")}</span>`, `<span class="bcard-tag">${escapeHtml(st.duration || "")} plan</span>`, `<span class="bcard-tag">${escapeHtml(st.interval || "")} execution</span>`];
+        const shownDuration = (request && request.duration) || st.duration || $("g-duration").value || "";
+        const tags = [`<span class="bcard-tag">${escapeHtml(st.strategy || "")}</span>`, `<span class="bcard-tag">${escapeHtml(shownDuration)} plan</span>`, `<span class="bcard-tag">${escapeHtml(st.interval || "")} execution</span>`];
         if (st.used_ai) tags.push('<span class="bcard-tag ai">· AI</span>');
         $("bc-tags").innerHTML = tags.join(" ");
-        $("bc-pnl").textContent = (up ? "+" : "") + (Math.round(pnl * 100) / 100); $("bc-pnl").className = "bcard-num mono " + (up ? "up" : "down");
-        $("bc-roi").textContent = (up ? "+" : "") + (Math.round(roi * 100) / 100) + "% ROI"; $("bc-roi").className = "bcard-roi mono " + (up ? "up" : "down");
-        $("bc-spark").innerHTML = (d.curve && d.curve.length) ? bcardSpark(d.curve.map(Number)) : "";
-        const cells = [
+        $("g-card").classList.toggle("plan-edit", needsEdit);
+        $("g-card-title").textContent = needsEdit ? "Edit plan before mission" : "Review paper assessment";
+        $("bc-mode").textContent = needsEdit ? "EDIT PLAN" : "PAPER ⓘ";
+        $("bc-mode").title = needsEdit
+          ? "No actionable setup was found in this validation window. Change the plan before launching."
+          : "Paper run — simulated on real Binance candles. No real orders, no real money. Just proof of how the strategy would have done.";
+        $("bc-pnl-label").textContent = needsEdit ? "Assessment status" : "Estimated net PnL (USDT)";
+        if (needsEdit) {
+          $("bc-pnl").textContent = "Needs edit";
+          $("bc-pnl").className = "bcard-num mono status";
+          $("bc-roi").textContent = "No paper result to launch";
+          $("bc-roi").className = "bcard-roi mono";
+          $("bc-spark").innerHTML = "";
+        } else {
+          $("bc-pnl").textContent = (up ? "+" : "") + (Math.round(pnl * 100) / 100); $("bc-pnl").className = "bcard-num mono " + (up ? "up" : "down");
+          $("bc-roi").textContent = (up ? "+" : "") + (Math.round(roi * 100) / 100) + "% ROI"; $("bc-roi").className = "bcard-roi mono " + (up ? "up" : "down");
+          $("bc-spark").innerHTML = (d.curve && d.curve.length) ? bcardSpark(d.curve.map(Number)) : "";
+        }
+        const cells = needsEdit ? [
+          ["Market data", "OK", "up"],
+          ["Entries needed", String(st.estimated_entries || "—"), ""],
+          ["Launchable setups", String(st.signal_setups || 0), Number(st.signal_setups || 0) > 0 ? "up" : "down"],
+          ["Trades found", String(st.trades || 0), "down"],
+          ["Validation", st.validation_window || st.duration || "—", ""],
+          ["Plan action", "Edit plan", "down"],
+          ["Capital", cap + " USDT", ""],
+          ["Target", (st.profit_target || "0") + " USDT", ""],
+          ["Capital risk", (st.risk_pct || 0) + "%", ""],
+          ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
+        ] : [
           ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%", ""],
           ["Trades", String(st.trades || 0), ""],
+          ["Entries needed", String(st.estimated_entries || "—"), ""],
           ["W / L", (st.wins || 0) + " / " + (st.losses || 0), ""],
           ["Target hit", st.verdict === "target_reached" ? "Yes" : "No", st.verdict === "target_reached" ? "up" : "down"],
           ["Validation", st.validation_window || st.duration || "—", ""],
@@ -1355,21 +1405,44 @@
           ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ];
         $("bc-stats").innerHTML = cells.map(([k, v, cls]) => `<div class="bcard-cell"><div class="ck">${k}</div><div class="cv ${cls}">${escapeHtml(v)}</div></div>`).join("");
-        $("bc-verdict").textContent = verdictText(st.verdict);
+        const blocker = needsEdit && st.top_blocker ? "Top blocker: " + st.top_blocker : "";
+        const hint = needsEdit ? planHint(st) : "";
+        $("bc-verdict").innerHTML = escapeHtml(verdictText(st.verdict, st))
+          + (blocker ? `<br><span style="color:var(--muted)">${escapeHtml(blocker)}</span>` : "")
+          + (hint ? `<br><span style="color:var(--muted)">Next edit: ${escapeHtml(hint)}</span>` : "");
         $("g-card").classList.remove("hidden");
         $("g-review-actions").classList.remove("hidden");
-        $("g-live").classList.toggle("hidden", st.verdict !== "target_reached");
+        const launchable = canLaunchGoal(st);
+        const fallbackable = needsEdit && String(st.strategy || "").startsWith("anny_basic");
+        $("g-live").classList.toggle("hidden", !launchable);
+        $("g-live").disabled = !launchable;
+        $("g-try-auto").classList.toggle("hidden", !fallbackable);
+        $("g-try-rsi").classList.toggle("hidden", !fallbackable);
+        if (needsEdit) {
+          const aiNote = d.ai ? " " + d.ai : "";
+          const hintNote = planHint(st) ? " Next: " + planHint(st) : "";
+          goalMsg(planEditReason(st) + ". Edit the plan before Launch & confirm." + hintNote + aiNote, false);
+          $("g-confirm-out").classList.add("hidden");
+          $("g-confirm-actions").classList.add("hidden");
+          pendingMission = null; missionConfirmId = null;
+        }
         const trades = d.trades || [];
         $("g-trades").innerHTML = trades.length
           ? trades.map((t) => `<div class="trade"><span class="tside ${t.side === "long" ? "up" : "down"}">${escapeHtml(t.side)}</span><span style="color:var(--muted)">${escapeHtml(t.outcome)}</span><span class="tpnl ${Number(t.pnl) >= 0 ? "up" : "down"}">${fmtPnl(t.pnl)}</span></div>`).join("")
           : "<p style='font-size:0.85rem'>No trades.</p>";
         $("g-tradeswrap").classList.toggle("hidden", trades.length === 0);
-        if (d.ai) goalMsg(d.ai, true);
+        if (d.ai && !needsEdit) goalMsg(d.ai, true);
       }
       async function runGoal() {
         goalMsg("Running on real candles…", true);
         $("g-run").disabled = true;
         $("g-review-actions").classList.add("hidden");
+        $("g-live").classList.add("hidden");
+        $("g-try-auto").classList.add("hidden");
+        $("g-try-rsi").classList.add("hidden");
+        $("g-confirm-out").classList.add("hidden");
+        $("g-confirm-actions").classList.add("hidden");
+        pendingMission = null; missionConfirmId = null; lastGoalStats = null;
         const body = {
           profit: $("g-profit").value, capital: $("g-capital").value,
           capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, symbol: $("g-symbol").value,
@@ -1380,14 +1453,22 @@
           const d = await r.json().catch(() => ({}));
           if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
           if (!d.ai) goalMsg("");
-          renderGoalResult(d); loadGoalHistory();
+          renderGoalResult(d, body); loadGoalHistory();
           $("g-card").scrollIntoView({ behavior:"smooth", block:"center" });
         } catch (e) { goalMsg("Network error"); }
         finally { $("g-run").disabled = false; }
       }
       $("g-run").onclick = runGoal;
       $("g-edit").onclick = () => { $("g-profit").focus(); $("view-orders").scrollIntoView({ behavior:"smooth", block:"start" }); };
+      $("g-try-auto").onclick = () => { $("g-strategy").value = "auto"; runGoal(); };
+      $("g-try-rsi").onclick = () => { $("g-strategy").value = "rsi"; runGoal(); };
       async function runLiveMission() {
+        if (!canLaunchGoal(lastGoalStats)) {
+          const hintNote = lastGoalStats && planHint(lastGoalStats) ? " Next: " + planHint(lastGoalStats) : "";
+          goalMsg((lastGoalStats ? planEditReason(lastGoalStats) : "Paper assessment is not launch-ready") + ". Edit the plan and assess again." + hintNote, false);
+          $("g-edit").focus();
+          return;
+        }
         if (!confirm("Run a LIVE testnet Mission? ANNY will propose a real order on your active key — you still press Confirm before it places.")) return;
         goalMsg("Preparing live Mission…", true);
         $("g-live").disabled = true;
