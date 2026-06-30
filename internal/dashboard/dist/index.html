@@ -506,8 +506,9 @@
 
         <div class="card" id="live-card">
           <div class="flow-step"><span class="flow-no">3</span><strong>Launch &amp; confirm</strong></div>
-          <p style="margin:0.3rem 0">Review the proposed testnet order. Nothing is placed until you confirm.</p>
+          <p id="g-step3-sub" style="margin:0.3rem 0">Review the proposed testnet order. Nothing is placed until you confirm.</p>
           <pre id="g-confirm-out" class="output hidden"></pre>
+          <div id="g-armed-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
           <div id="g-confirm-actions" class="actions hidden">
             <button class="primary" id="g-confirm-yes">Confirm mission</button>
             <button class="ghost" id="g-confirm-no">Cancel</button>
@@ -1327,8 +1328,88 @@
         box.textContent = `[${stamp}] ${text}\n\n` + box.textContent;
         box.classList.remove("hidden");
       }
+      let armedMission = null;     // full record being tracked (for live countdown)
+      let armedPollTimer = null;   // server status poll
+      let armedTickTimer = null;   // 1s local countdown tick
+      // step3Header swaps the Step-3 subtitle between the manual-confirm flow and the
+      // armed wait-for-setup flow so the copy matches what's actually happening.
+      function step3Header(mode) {
+        const el = $("g-step3-sub");
+        if (!el) return;
+        el.textContent = mode === "armed"
+          ? "Armed — ANNY is waiting for a live ANNY Basic setup and will auto-place one capped testnet entry if one appears. Disarm any time."
+          : "Review the proposed testnet order. Nothing is placed until you confirm.";
+      }
+      function fmtCountdown(ms) {
+        if (!isFinite(ms) || ms <= 0) return "expired";
+        const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+        return (h > 0 ? h + "h " : "") + m + "m " + (ss < 10 ? "0" : "") + ss + "s";
+      }
+      // renderArmedCountdown updates only the live status line; the legal disclosure
+      // (from the server) stays put in g-confirm-out, untouched.
+      function renderArmedCountdown() {
+        if (!armedMissionId || !armedMission) return;
+        const exp = new Date(armedMission.expires_at).getTime();
+        const box = $("g-armed-status");
+        box.classList.remove("hidden");
+        box.style.color = "var(--primary)";
+        box.textContent = `🎯 Armed · ${armedMission.symbol || ""} · waiting for setup · expires in ${fmtCountdown(exp - Date.now())}`;
+      }
+      function stopArmedPolling() {
+        if (armedTickTimer) { clearInterval(armedTickTimer); armedTickTimer = null; }
+        if (armedPollTimer) { clearInterval(armedPollTimer); armedPollTimer = null; }
+      }
+      // resetArmedUI clears any armed tracking + countdown and restores the manual
+      // Step-3 header (used when a new run starts or a manual confirmation is staged).
+      function resetArmedUI() {
+        stopArmedPolling();
+        armedMissionId = null; armedMission = null;
+        $("g-armed-actions").classList.add("hidden");
+        $("g-armed-status").classList.add("hidden");
+        step3Header("manual");
+      }
+      function startArmedPolling() {
+        stopArmedPolling();
+        armedTickTimer = setInterval(renderArmedCountdown, 1000);
+        armedPollTimer = setInterval(pollArmed, 7000);
+      }
+      // applyArmedStatus reacts to the latest server record: keep counting down while
+      // armed; surface the outcome immediately on a terminal state.
+      function applyArmedStatus(m) {
+        if (!m) return;
+        if (m.status === "armed") { armedMission = m; renderArmedCountdown(); return; }
+        stopArmedPolling();
+        armedMissionId = null; armedMission = null;
+        $("g-armed-actions").classList.add("hidden");
+        step3Header("manual");
+        const box = $("g-armed-status");
+        box.classList.remove("hidden");
+        if (m.status === "triggered") {
+          box.style.color = "var(--profit)";
+          box.textContent = `🚀 Setup found — testnet entry placed on ${m.symbol || ""} ${m.side || ""}. See Live monitor below.`;
+          addMissionActivity(`Triggered ${m.symbol || ""} ${m.side || ""} — testnet entry placed`);
+          if (typeof loadPositions === "function") loadPositions();
+        } else if (m.status === "expired") {
+          box.style.color = "var(--muted)";
+          box.textContent = `⌛ Window expired on ${m.symbol || ""} — no setup appeared, no order placed.`;
+          addMissionActivity(`Expired ${m.symbol || ""} — no order`);
+        } else { // disarmed
+          box.style.color = "var(--muted)";
+          box.textContent = "Disarmed. No order will be placed.";
+        }
+      }
+      async function pollArmed() {
+        if (!armedMissionId) { stopArmedPolling(); return; }
+        try {
+          const d = await (await fetch("/api/mission/armed", { headers: authHeaders() })).json();
+          const m = (d.armed || []).find((x) => x.id === armedMissionId);
+          if (!m) { stopArmedPolling(); return; }
+          applyArmedStatus(m);
+        } catch (e) {}
+      }
       function setArmedState(armed, output) {
         armedMissionId = armed && armed.id ? armed.id : null;
+        armedMission = armed || null;
         if (output) {
           $("g-confirm-out").textContent = output;
           $("g-confirm-out").classList.remove("hidden");
@@ -1336,6 +1417,9 @@
         $("g-armed-actions").classList.toggle("hidden", !armedMissionId);
         $("g-confirm-actions").classList.add("hidden");
         if (armedMissionId && armed) {
+          step3Header("armed");
+          renderArmedCountdown();
+          startArmedPolling();
           const exp = armed.expires_at ? new Date(armed.expires_at) : null;
           const when = exp && !isNaN(exp.getTime()) ? " · expires " + exp.toLocaleTimeString() : "";
           addMissionActivity(`Armed ${armed.symbol || ""}${when}`);
@@ -1467,8 +1551,8 @@
           goalMsg(planEditReason(st) + ". Edit the plan before Launch & confirm." + hintNote + aiNote, false);
           $("g-confirm-out").classList.add("hidden");
           $("g-confirm-actions").classList.add("hidden");
-          $("g-armed-actions").classList.add("hidden");
-          pendingMission = null; missionConfirmId = null; armedMissionId = null;
+          resetArmedUI();
+          pendingMission = null; missionConfirmId = null;
         }
         const trades = d.trades || [];
         $("g-trades").innerHTML = trades.length
@@ -1486,8 +1570,8 @@
         $("g-try-rsi").classList.add("hidden");
         $("g-confirm-out").classList.add("hidden");
         $("g-confirm-actions").classList.add("hidden");
-        $("g-armed-actions").classList.add("hidden");
-        pendingMission = null; missionConfirmId = null; armedMissionId = null; lastGoalStats = null;
+        resetArmedUI();
+        pendingMission = null; missionConfirmId = null; lastGoalStats = null;
         const body = {
           profit: $("g-profit").value, capital: $("g-capital").value,
           capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, symbol: $("g-symbol").value,
@@ -1528,8 +1612,8 @@
           $("g-confirm-out").textContent = d.output || ""; $("g-confirm-out").classList.remove("hidden");
           pendingMission = d.mission || null;
           if (d.armed) { setArmedState(d.armed, d.output || "Armed — waiting for setup; one capped testnet entry may be auto-placed before expiry."); }
-          else if (d.confirm_id) { missionConfirmId = d.confirm_id; $("g-confirm-actions").classList.remove("hidden"); $("g-armed-actions").classList.add("hidden"); }
-          else { $("g-confirm-actions").classList.add("hidden"); $("g-armed-actions").classList.add("hidden"); }
+          else if (d.confirm_id) { resetArmedUI(); missionConfirmId = d.confirm_id; $("g-confirm-actions").classList.remove("hidden"); }
+          else { resetArmedUI(); $("g-confirm-actions").classList.add("hidden"); }
           $("live-card").scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (e) { goalMsg("Network error"); }
         finally { $("g-live").disabled = false; }
@@ -1564,10 +1648,12 @@
         $("g-disarm").disabled = true;
         try {
           const d = await (await fetch("/api/mission/disarm", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id }) })).json();
-          $("g-confirm-out").textContent = d.output || d.error || "Disarmed.";
           addMissionActivity(d.output || "Disarmed.");
-          armedMissionId = null;
-          $("g-armed-actions").classList.add("hidden");
+          resetArmedUI();
+          const box = $("g-armed-status");
+          box.classList.remove("hidden");
+          box.style.color = "var(--muted)";
+          box.textContent = d.output || d.error || "Disarmed. No order will be placed.";
         } catch (e) { $("g-confirm-out").textContent = "Network error"; }
         finally { $("g-disarm").disabled = false; }
       }
