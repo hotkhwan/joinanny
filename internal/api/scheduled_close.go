@@ -48,6 +48,12 @@ type ScheduledClose struct {
 	UserKey             string               `json:"-" bson:"user_key"`
 	UserID              int64                `json:"-" bson:"user_id"`
 	Symbol              string               `json:"symbol" bson:"symbol"`
+	// Side is the mission position's direction ("long"/"short"). The poller only
+	// closes an open position that matches this side, so a timed close can never
+	// flatten an unrelated opposite-side position on the same symbol. Empty on
+	// legacy rows persisted before this field existed → falls back to symbol-only
+	// match (old behaviour) so in-flight rows still drain safely.
+	Side                string               `json:"side,omitempty" bson:"side,omitempty"`
 	DueAt               time.Time            `json:"due_at" bson:"due_at"`
 	WindowSeconds       int64                `json:"window_seconds" bson:"window_seconds"`
 	EntryConfirmationID string               `json:"entry_confirmation_id,omitempty" bson:"entry_confirmation_id,omitempty"`
@@ -271,6 +277,7 @@ func (s *Server) scheduleTimedMissionClose(m timedMission, entryConfirmationID s
 		UserKey:             orders.TraderKey(m.UserID),
 		UserID:              m.UserID,
 		Symbol:              normalizeSymbol(m.Symbol),
+		Side:                strings.ToLower(strings.TrimSpace(m.Side)),
 		WindowSeconds:       int64(m.Duration / time.Second),
 		EntryConfirmationID: entryConfirmationID,
 		Status:              ScheduledCloseStatusAwaitingEntry,
@@ -423,8 +430,8 @@ func (s *Server) handleScheduledClose(ctx context.Context, id string, now time.T
 		}
 		return updated, true, err
 	}
-	if !scheduledCloseHasOpenPosition(positions, close.Symbol) {
-		updated, _, err := s.scheduledCloses.MarkDone(ctx, close.ID, "", "no open position", now)
+	if !scheduledCloseHasOpenPosition(positions, close.Symbol, close.Side) {
+		updated, _, err := s.scheduledCloses.MarkDone(ctx, close.ID, "", "no matching open position", now)
 		return updated, true, err
 	}
 	intent := domain.Intent{Type: domain.IntentClose, Close: &domain.CloseIntent{
@@ -459,11 +466,20 @@ func (s *Server) handleScheduledClose(ctx context.Context, id string, now time.T
 	return updated, true, err
 }
 
-func scheduledCloseHasOpenPosition(positions []domain.Position, symbol string) bool {
+// scheduledCloseHasOpenPosition reports whether an open position exists that this
+// timed close is entitled to flatten. When side is set (all non-legacy rows) it
+// must match the position's direction, so a mission LONG never closes an unrelated
+// SHORT the user opened on the same symbol after the mission position was gone.
+// An empty side (legacy row) falls back to symbol-only matching.
+func scheduledCloseHasOpenPosition(positions []domain.Position, symbol, side string) bool {
 	for _, p := range positions {
-		if strings.EqualFold(p.Symbol, symbol) && !p.Amount.IsZero() {
-			return true
+		if !strings.EqualFold(p.Symbol, symbol) || p.Amount.IsZero() {
+			continue
 		}
+		if side != "" && !strings.EqualFold(string(p.Side), side) {
+			continue
+		}
+		return true
 	}
 	return false
 }

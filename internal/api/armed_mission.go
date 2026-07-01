@@ -575,7 +575,7 @@ func (s *Server) triggerArmedMission(ctx context.Context, mission ArmedMission, 
 	// it is armed only after the entry actually executes, so a crash before confirm
 	// can never close an unrelated position.
 	if _, err := s.scheduleTimedMissionClose(timedMission{
-		UserID: mission.UserID, Symbol: mission.Symbol, Duration: planDuration(mission.Duration),
+		UserID: mission.UserID, Symbol: mission.Symbol, Side: side, Duration: planDuration(mission.Duration),
 	}, confirmation.ID); err != nil {
 		_ = s.orders.Cancel(ctx, mission.UserID, confirmation.ID)
 		return updated, true, err

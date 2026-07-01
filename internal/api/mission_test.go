@@ -541,7 +541,7 @@ func TestScheduledCloseNoOpenPositionDone(t *testing.T) {
 		t.Fatalf("run due handled=%d err=%v, want one done row", handled, err)
 	}
 	got := store.rows["close_empty"]
-	if got.Status != ScheduledCloseStatusDone || got.ConfirmationID != "" || got.Reason != "no open position" || exec.calls != 0 {
+	if got.Status != ScheduledCloseStatusDone || got.ConfirmationID != "" || got.Reason != "no matching open position" || exec.calls != 0 {
 		t.Fatalf("scheduled close = %+v calls=%d, want done/no-op", got, exec.calls)
 	}
 }
@@ -577,6 +577,34 @@ func TestScheduledCloseClosesOpenPositionOnce(t *testing.T) {
 	handled, err = server.runDueScheduledCloses(context.Background(), now.Add(time.Second))
 	if err != nil || handled != 0 || exec.calls != 1 {
 		t.Fatalf("second run handled=%d err=%v calls=%d, want no double close", handled, err, exec.calls)
+	}
+}
+
+// A LONG mission's timed close must not flatten an unrelated SHORT the user opened
+// on the same symbol after the mission position was already closed by TP/SL.
+func TestScheduledCloseSkipsOppositeSidePosition(t *testing.T) {
+	store := newMemScheduledCloses()
+	now := time.Now().UTC()
+	if err := store.Save(context.Background(), ScheduledClose{
+		ID: "close_side", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT", Side: "long",
+		DueAt: now.Add(-time.Minute), Status: ScheduledCloseStatusPending, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	exec := &scheduledCloseExecutor{positions: []domain.Position{
+		{Symbol: "BTCUSDT", Side: domain.PositionSideShort, Amount: decimal.MustParse("0.02")},
+	}}
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv("")), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithScheduledCloseStore(store),
+		WithCredentials(testCredentialService(t, "tg:7", true)))
+
+	handled, err := server.runDueScheduledCloses(context.Background(), now)
+	if err != nil || handled != 1 {
+		t.Fatalf("run due handled=%d err=%v, want one handled row", handled, err)
+	}
+	got := store.rows["close_side"]
+	if got.Status != ScheduledCloseStatusDone || got.Reason != "no matching open position" || exec.calls != 0 {
+		t.Fatalf("scheduled close = %+v calls=%d, want done no-op leaving the opposite-side position untouched", got, exec.calls)
 	}
 }
 

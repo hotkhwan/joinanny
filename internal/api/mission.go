@@ -35,6 +35,7 @@ const (
 type timedMission struct {
 	UserID   int64
 	Symbol   string
+	Side     string
 	Duration time.Duration
 }
 
@@ -200,7 +201,7 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	// can't be persisted, cancel the confirmation rather than let the user confirm an
 	// entry with no timed close while the copy promises one.
 	if _, err := s.scheduleTimedMissionClose(timedMission{
-		UserID: userID, Symbol: symbol, Duration: planDuration(durationKey),
+		UserID: userID, Symbol: symbol, Side: side, Duration: planDuration(durationKey),
 	}, confirmation.ID); err != nil {
 		s.logger.Warn("could not persist awaiting timed close; cancelling confirmation", "error", err)
 		_ = s.orders.Cancel(c.Context(), userID, confirmation.ID)
