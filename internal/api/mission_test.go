@@ -515,6 +515,64 @@ func TestArmedMissionWatcherAutoConfirmsOnceAndGated(t *testing.T) {
 	}
 }
 
+func TestArmedMissionWatcherUsesOneMinuteExecutionForLongWindow(t *testing.T) {
+	var intervals []string
+	var limits []string
+	market := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fapi/v1/klines" {
+			http.NotFound(w, r)
+			return
+		}
+		intervals = append(intervals, r.URL.Query().Get("interval"))
+		limits = append(limits, r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[[0,"100","102","99","101","1",60000,"0",0,"0","0","0"]]`))
+	}))
+	t.Cleanup(market.Close)
+
+	store := newMemArmedMissions()
+	now := time.Now().UTC()
+	mission := ArmedMission{
+		ID: "arm_watch_long", UserKey: "tg:7", UserID: 7, Symbol: "BTCUSDT", Strategy: annybasic.ID,
+		CapitalUSDT: "100", LeverageUsePct: 50, Duration: armedMissionUnlimitedDuration, Status: ArmedMissionStatusArmed, IdempotencyKey: "k-long",
+		ArmedAt: now, ExpiresAt: now.Add(time.Hour), PurgeAt: armedMissionPurgeAt(now.Add(time.Hour)), CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.Save(context.Background(), mission); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	exec := &missionTestExecutor{}
+	server := NewServer(testConfigWith(t, missionArmRuntimeEnv(market.URL)), nil, testLogger(),
+		WithOrders(missionOrderService(exec)), WithCredentials(testCredentialService(t, "tg:7", true)), WithArmedMissionStore(store))
+	calls := 0
+	candleCount := 0
+	lastClose := 0.0
+	server.annyBasicDecider = func(_ context.Context, _ string, candles []marketdata.Candle) (annybasic.Decision, error) {
+		calls++
+		candleCount = len(candles)
+		if len(candles) > 0 {
+			lastClose = candles[len(candles)-1].Close
+		}
+		return annybasic.Decision{Side: annybasic.SideLong, Reason: "CDC and QQE aligned"}, nil
+	}
+
+	triggered, done, err := server.checkArmedMission(context.Background(), mission.ID, now.Add(time.Minute))
+	if err != nil || !done || triggered.Status != ArmedMissionStatusTriggered || calls != 1 || exec.calls != 1 {
+		t.Fatalf("auto trigger = %+v done=%v calls=%d exec=%d err=%v", triggered, done, calls, exec.calls, err)
+	}
+	if candleCount != 1 || lastClose != 101 {
+		t.Fatalf("decider candles = count:%d close:%v, want one 1m candle closing 101", candleCount, lastClose)
+	}
+	if len(intervals) != 1 || intervals[0] != armedMissionExecutionInterval {
+		t.Fatalf("market intervals = %v, want only %q for armed ANNY Basic execution", intervals, armedMissionExecutionInterval)
+	}
+	if len(limits) != 1 || limits[0] != "120" {
+		t.Fatalf("market limits = %v, want 120 execution candles", limits)
+	}
+	if got := armedMissionPollInterval(armedMissionUnlimitedDuration); got != time.Minute {
+		t.Fatalf("long-window armed poll interval = %v, want 1m execution cadence", got)
+	}
+}
+
 func TestScheduledCloseClaimSingleWinnerAndRetention(t *testing.T) {
 	store := newMemScheduledCloses()
 	now := time.Now().UTC()

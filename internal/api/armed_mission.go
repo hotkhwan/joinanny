@@ -30,6 +30,9 @@ const (
 const (
 	armedMissionRetention         = 90 * 24 * time.Hour
 	armedMissionUnlimitedDuration = "24h"
+	armedMissionExecutionInterval = "1m"
+	armedMissionExecutionBars     = 120
+	armedMissionCheckInterval     = time.Minute
 	maxActiveArmedMissionsPerUser = 3
 )
 
@@ -495,19 +498,10 @@ func (s *Server) startArmedMissionWatcher(ctx context.Context, mission ArmedMiss
 }
 
 func armedMissionPollInterval(duration string) time.Duration {
-	_, spec := missionSpecFor(duration)
-	switch spec.ExecutionInterval {
-	case "1m":
-		return time.Minute
-	case "5m":
-		return 5 * time.Minute
-	case "15m":
-		return 15 * time.Minute
-	case "1h":
-		return time.Hour
-	default:
-		return time.Minute
-	}
+	// Armed missions are currently ANNY Basic only. The model confirms a 15m
+	// trend, then accepts only the first closed 1m execution candle after that
+	// main candle, so long plan windows still need a 1m watcher cadence.
+	return armedMissionCheckInterval
 }
 
 func (s *Server) checkArmedMission(ctx context.Context, id string, now time.Time) (ArmedMission, bool, error) {
@@ -525,8 +519,7 @@ func (s *Server) checkArmedMission(ctx context.Context, id string, now time.Time
 	if !s.armedMissionRuntimeAllowed() || !s.armedMissionTriggerAllowed(ctx, mission) {
 		return mission, false, nil
 	}
-	_, spec := missionSpecFor(mission.Duration)
-	candles, err := s.market.Candles(ctx, mission.Symbol, spec.ExecutionInterval, 120)
+	candles, err := s.market.Candles(ctx, mission.Symbol, armedMissionExecutionInterval, armedMissionExecutionBars)
 	if err != nil || len(candles) == 0 {
 		if err == nil {
 			err = fmt.Errorf("no market candles")

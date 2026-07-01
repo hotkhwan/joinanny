@@ -1316,6 +1316,7 @@
       let armedMissionId = null;
       let activeMission = JSON.parse(localStorage.getItem("activeMission") || "null");
       let lastGoalStats = null;
+      let lastGoalRequest = null;
       function durationMs(v) {
         const m = /^(\d+)(m|h|w)$/.exec(v || "");
         if (!m) return 0;
@@ -1448,6 +1449,23 @@
         // 2-trade fluke cannot.
         return !!(st && !goalNeedsEdit(st) && st.launchable === true);
       }
+      function goalFormRequest() {
+        return {
+          profit: $("g-profit").value,
+          capital: $("g-capital").value,
+          capital_risk_pct: parseInt($("g-risk").value, 10) || 5,
+          leverage_use_pct: parseInt($("g-leverage").value, 10) || 25,
+          symbol: $("g-symbol").value,
+          strategy: $("g-strategy").value,
+          duration: $("g-duration").value,
+          use_ai: $("g-ai").checked,
+        };
+      }
+      function sameGoalRequest(a, b) {
+        if (!a || !b) return false;
+        return ["profit", "capital", "capital_risk_pct", "leverage_use_pct", "symbol", "strategy", "duration", "use_ai"]
+          .every((k) => String(a[k]) === String(b[k]));
+      }
       function launchBlockReason(st) {
         const trades = Number((st && st.trades) || 0);
         if (trades < 5) return `Need ≥5 paper trades for a reliable edge — only ${trades} so far. Try a longer duration or another symbol.`;
@@ -1483,6 +1501,7 @@
       function renderGoalResult(d, request) {
         const st = d.stats || {};
         lastGoalStats = st;
+        lastGoalRequest = request ? Object.assign({}, request) : null;
         const needsEdit = goalNeedsEdit(st);
         const pnl = Number(st.realized_pnl || 0), up = pnl >= 0;
         const cap = Number(st.capital || 100) || 100;
@@ -1575,12 +1594,8 @@
         $("g-confirm-out").classList.add("hidden");
         $("g-confirm-actions").classList.add("hidden");
         resetArmedUI();
-        pendingMission = null; missionConfirmId = null; lastGoalStats = null;
-        const body = {
-          profit: $("g-profit").value, capital: $("g-capital").value,
-          capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, symbol: $("g-symbol").value,
-          strategy: $("g-strategy").value, duration: $("g-duration").value, use_ai: $("g-ai").checked,
-        };
+        pendingMission = null; missionConfirmId = null; lastGoalStats = null; lastGoalRequest = null;
+        const body = goalFormRequest();
         try {
           const r = await fetch("/api/goal/run", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));
@@ -1602,10 +1617,16 @@
           $("g-edit").focus();
           return;
         }
+        const current = goalFormRequest();
+        if (!sameGoalRequest(current, lastGoalRequest)) {
+          goalMsg("This plan changed after the paper assessment. Assess this exact plan again before Launch & confirm.", false);
+          $("g-run").focus();
+          return;
+        }
         if (!confirm("Run a LIVE testnet Mission? If no setup is live, ANNY can arm the plan and auto-place one capped testnet entry inside this window. No setup is guaranteed.")) return;
         goalMsg("Preparing live Mission…", true);
         $("g-live").disabled = true;
-        const body = { symbol: $("g-symbol").value, capital: $("g-capital").value, capital_risk_pct: parseInt($("g-risk").value, 10) || 5, leverage_use_pct: parseInt($("g-leverage").value, 10) || 25, strategy: $("g-strategy").value, duration: $("g-duration").value, use_ai: $("g-ai").checked };
+        const body = Object.assign({}, lastGoalRequest);
         try {
           const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));
