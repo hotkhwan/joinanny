@@ -367,11 +367,24 @@ func (e *Executor) makerFirstEntry(ctx context.Context, symbol, side string, pri
 		for {
 			status, statusErr := e.queryOrder(ctx, symbol, limitID)
 			if statusErr != nil {
+				// A GTX post-only entry that could not rest is expired/purged, and a
+				// query racing order replication can momentarily 404. Neither is fatal:
+				// break to the authoritative cancel below, which confirms any fill
+				// before the market fallback. Only a real error aborts the entry.
+				if isOrderNotFound(statusErr) {
+					break
+				}
 				_ = e.cancelOrder(ctx, symbol, limitID)
 				return orderResponse{}, statusErr
 			}
 			if status.Status == "FILLED" {
 				return status, nil
+			}
+			if isTerminalUnfilledStatus(status.Status) {
+				// GTX rejected as taker (or otherwise terminated) without resting: it
+				// will never fill, so stop polling and fall back to a market taker.
+				limit = status
+				break
 			}
 			if time.Now().After(deadline) {
 				limit = status
@@ -386,10 +399,15 @@ func (e *Executor) makerFirstEntry(ctx context.Context, symbol, side string, pri
 		}
 		cancelled, cancelErr := e.cancelOrderStatus(ctx, symbol, limitID)
 		if cancelErr != nil {
-			return orderResponse{}, fmt.Errorf("cancel unfilled maker entry: %w", cancelErr)
-		}
-		// The cancel response is authoritative for fills racing the last poll.
-		if cancelled.ExecutedQty != "" {
+			// Not-found on cancel means the maker order never rested (GTX rejected) —
+			// nothing filled, nothing to cancel — so proceed to the market fallback.
+			// Any other cancel failure is a real error: the order may still be live,
+			// so we must not stack a market order on top of it.
+			if !isOrderNotFound(cancelErr) {
+				return orderResponse{}, fmt.Errorf("cancel unfilled maker entry: %w", cancelErr)
+			}
+		} else if cancelled.ExecutedQty != "" {
+			// The cancel response is authoritative for fills racing the last poll.
 			limit = cancelled
 		}
 	}
@@ -1100,4 +1118,26 @@ func apiErrorAs(err error, target *apiError) bool {
 		return true
 	}
 	return false
+}
+
+// isOrderNotFound reports whether err is Binance's "order does not exist" signal:
+// -2013 (query) or -2011 (cancel of an unknown order). Both mean the referenced
+// order is not on the book — for a maker-first entry that is a non-fatal outcome
+// (the GTX post-only never rested, or a query raced order replication), not a
+// reason to abort the whole entry.
+func isOrderNotFound(err error) bool {
+	var apiErr apiError
+	return apiErrorAs(err, &apiErr) && (apiErr.Code == -2013 || apiErr.Code == -2011)
+}
+
+// isTerminalUnfilledStatus reports whether a maker order reached a terminal state
+// without resting (e.g. a GTX post-only rejected as taker). Such an order will
+// never fill, so the entry should stop polling and fall back to a market taker.
+func isTerminalUnfilledStatus(status string) bool {
+	switch status {
+	case "EXPIRED", "CANCELED", "REJECTED":
+		return true
+	default:
+		return false
+	}
 }

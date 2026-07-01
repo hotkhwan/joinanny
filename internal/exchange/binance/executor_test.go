@@ -93,6 +93,51 @@ func TestExecutorOpenPlacesEntryStopAndTakeProfitOrders(t *testing.T) {
 	}
 }
 
+func TestExecutorOpenFallsBackToMarketWhenMakerEntryNotFound(t *testing.T) {
+	// A GTX post-only entry that cannot rest is expired/purged; querying it returns
+	// -2013 and cancelling it returns -2011. Neither is fatal: the entry must fall
+	// back to a MARKET taker rather than aborting with "Order does not exist".
+	server := newBinanceTestServer(t)
+	server.makerEntryNotFound = true
+	defer server.Close()
+
+	executor := NewExecutor(ExecutorConfig{
+		APIKey:               "key",
+		APISecret:            "secret",
+		BaseURL:              server.URL,
+		Testnet:              true,
+		RequestTimeout:       time.Second,
+		ExchangeInfoCacheTTL: time.Minute,
+	}, testLogger())
+	executor.now = func() time.Time { return time.UnixMilli(1710000000000) }
+
+	result, err := executor.Execute(context.Background(), testOpenConfirmation())
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(result.Message, "_entrym") {
+		t.Fatalf("Message = %q, want market-fallback entry (clientOrderId ending _entrym)", result.Message)
+	}
+
+	// The maker LIMIT is placed, queried (-2013), cancelled (-2011), then the entry
+	// falls back to a MARKET order before protection is attached.
+	var postOrders []url.Values
+	for _, req := range server.Requests() {
+		if req.MethodPath == "POST /fapi/v1/order" {
+			postOrders = append(postOrders, req.Query)
+		}
+	}
+	if len(postOrders) != 2 {
+		t.Fatalf("POST /fapi/v1/order count = %d, want 2 (GTX limit then MARKET fallback)", len(postOrders))
+	}
+	if postOrders[0].Get("timeInForce") != "GTX" || postOrders[0].Get("type") != "LIMIT" {
+		t.Fatalf("first entry = %s, want post-only GTX LIMIT", postOrders[0].Encode())
+	}
+	if postOrders[1].Get("type") != "MARKET" || postOrders[1].Get("quantity") != "0.001" {
+		t.Fatalf("fallback entry = %s, want MARKET quantity 0.001", postOrders[1].Encode())
+	}
+}
+
 func TestExecutorOpenRollsBackWhenStopLossFails(t *testing.T) {
 	server := newBinanceTestServer(t)
 	server.failStopLoss = true
@@ -347,11 +392,12 @@ func TestExecutorRefusesNonTestnetWhenRealTradingDisabled(t *testing.T) {
 
 type binanceTestServer struct {
 	*httptest.Server
-	mu              sync.Mutex
-	requests        []recordedRequest
-	orderID         int64
-	failStopLoss    bool // when true, the STOP_MARKET algo order is rejected
-	entryOnlyTrades bool
+	mu                 sync.Mutex
+	requests           []recordedRequest
+	orderID            int64
+	failStopLoss       bool // when true, the STOP_MARKET algo order is rejected
+	entryOnlyTrades    bool
+	makerEntryNotFound bool // when true, query/cancel of the maker entry return -2013/-2011
 }
 
 type recordedRequest struct {
@@ -387,11 +433,21 @@ func newBinanceTestServer(t *testing.T) *binanceTestServer {
 			_, _ = w.Write([]byte(`{"leverage":3,"symbol":"BTCUSDT"}`))
 		case "/fapi/v1/order":
 			if r.Method == http.MethodDelete {
+				if server.makerEntryNotFound {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"code":-2011,"msg":"Unknown order sent."}`))
+					return
+				}
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"clientOrderId":"` + r.URL.Query().Get("origClientOrderId") + `","orderId":1,"symbol":"BTCUSDT","status":"CANCELED"}`))
 				return
 			}
 			if r.Method == http.MethodGet {
+				if server.makerEntryNotFound {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"code":-2013,"msg":"Order does not exist."}`))
+					return
+				}
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"clientOrderId":"` + r.URL.Query().Get("origClientOrderId") + `","orderId":1001,"symbol":"BTCUSDT","status":"FILLED","type":"LIMIT","executedQty":"0.001"}`))
 				return
