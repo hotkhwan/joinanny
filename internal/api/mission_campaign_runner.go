@@ -19,7 +19,7 @@ type recordingTrader struct {
 	advisor *missionCampaignAdvisor
 	// onRecord persists the advisor's accumulated State after each closed trade so
 	// a restart resumes counting from it. Optional (nil in unit tests).
-	onRecord func(state annybasic.State, seq int64)
+	onRecord func(state annybasic.State)
 }
 
 func (t *recordingTrader) Trade(ctx context.Context, decision signals.Decision) (decimal.Decimal, error) {
@@ -30,7 +30,7 @@ func (t *recordingTrader) Trade(ctx context.Context, decision signals.Decision) 
 	if decision.Action == signals.ActionOpen {
 		t.advisor.Record(pnl)
 		if t.onRecord != nil {
-			t.onRecord(t.advisor.State(), int64(t.advisor.State().TradesClosed))
+			t.onRecord(t.advisor.State())
 		}
 	}
 	return pnl, nil
@@ -121,6 +121,7 @@ type missionCampaignRunner struct {
 	pollInterval time.Duration
 	now          func() time.Time
 	sleep        func(ctx context.Context, d time.Duration) error
+	onRecord     func(state annybasic.State)
 	logger       *slog.Logger
 }
 
@@ -156,8 +157,9 @@ func (r *missionCampaignRunner) Run(ctx context.Context) (campaign.State, campai
 		logger:        logger,
 	}
 	trader := &recordingTrader{
-		inner:   campaign.NewLiveTrader(r.userID, r.placer, r.resolver, logger),
-		advisor: r.advisor,
+		inner:    campaign.NewLiveTrader(r.userID, r.placer, r.resolver, logger),
+		advisor:  r.advisor,
+		onRecord: r.onRecord,
 	}
 	paced := &pacedSignals{inner: r.signals, interval: pollInterval, now: now, sleep: sleep}
 

@@ -239,6 +239,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if n := s.startArmedMissionWatchers(ctx); n > 0 {
 		s.logger.Info("armed missions rehydrated", "count", n)
 	}
+	if n := s.startCampaignMissionRunners(ctx); n > 0 {
+		s.logger.Info("campaign missions rehydrated", "count", n)
+	}
 	s.startScheduledClosePoller(ctx)
 	s.startMissionResultReconciler(ctx)
 	go func() {
@@ -294,6 +297,9 @@ func (s *Server) routes() {
 	s.app.Post("/api/mission/prepare", s.requireAuth, s.handleMissionPrepare)
 	s.app.Get("/api/mission/armed", s.requireAuth, s.handleArmedMissions)
 	s.app.Post("/api/mission/disarm", s.requireAuth, s.handleDisarmMission)
+	s.app.Post("/api/mission/campaign/arm", s.requireAuth, s.handleArmCampaignMission)
+	s.app.Get("/api/mission/campaign", s.requireAuth, s.handleCampaignMissions)
+	s.app.Post("/api/mission/campaign/disarm", s.requireAuth, s.handleDisarmCampaignMission)
 	s.app.Post("/api/goal/run", s.requireAuth, s.handleGoalRun)
 	s.app.Get("/api/goal/history", s.requireAuth, s.handleGoalHistory)
 	s.app.Get("/api/recorder", s.requireAuth, s.handleRecorder)
