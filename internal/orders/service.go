@@ -55,11 +55,23 @@ type ExecutionResult struct {
 	Mode          string
 	ClientOrderID string
 	Message       string
+	// Set on an open: the base quantity that actually reached the exchange.
+	// The result reconciler uses it to bound TP/SL exit fills to this mission.
+	Quantity decimal.Decimal
 	// Set on a close: the symbol/side that was closed and the realized PnL, so
 	// the trade journal can record the round-trip outcome.
 	Symbol      string
 	Side        string
+	ExitPrice   decimal.Decimal
 	RealizedPnL decimal.Decimal
+}
+
+type RealizedTrade struct {
+	Symbol      string
+	Side        string
+	ExitPrice   decimal.Decimal
+	RealizedPnL decimal.Decimal
+	ClosedAt    time.Time
 }
 
 type Executor interface {
@@ -78,6 +90,7 @@ type ExecutorProvider interface {
 // when nil the order flow runs without journaling.
 type TradeJournal interface {
 	Record(ctx context.Context, trade journal.Trade) error
+	Close(ctx context.Context, id string, update journal.CloseUpdate) (journal.Trade, bool, error)
 }
 
 type ConfirmationStore interface {
@@ -192,6 +205,12 @@ type PositionReader interface {
 	Positions(ctx context.Context) ([]domain.Position, error)
 }
 
+// RealizedTradeReader is the optional slice of an Executor that can read
+// exchange-realized PnL for a closed position.
+type RealizedTradeReader interface {
+	RealizedTrade(ctx context.Context, symbol, side string, since time.Time, entryQty decimal.Decimal) (RealizedTrade, bool, error)
+}
+
 // Positions returns the user's open positions on their own account, or nil when
 // the resolved executor cannot read them (e.g. dry-run).
 func (s *Service) Positions(ctx context.Context, userID int64) ([]domain.Position, error) {
@@ -215,6 +234,18 @@ func (s *Service) PositionsWithRequiredUserExecutor(ctx context.Context, userID 
 		return nil, nil
 	}
 	return pr.Positions(ctx)
+}
+
+func (s *Service) RealizedTradeWithRequiredUserExecutor(ctx context.Context, userID int64, symbol, side string, since time.Time, entryQty decimal.Decimal) (RealizedTrade, bool, error) {
+	executor, err := s.requiredExecutorForUser(ctx, userID)
+	if err != nil {
+		return RealizedTrade{}, false, err
+	}
+	reader, ok := executor.(RealizedTradeReader)
+	if !ok {
+		return RealizedTrade{}, false, fmt.Errorf("per-user executor cannot read realized trades")
+	}
+	return reader.RealizedTrade(ctx, symbol, side, since, entryQty)
 }
 
 func (s *Service) Prepare(ctx context.Context, userID int64, intent domain.Intent) (Confirmation, error) {
@@ -365,6 +396,7 @@ func (s *Service) confirm(ctx context.Context, userID int64, id string, requireU
 		},
 	})
 	s.logger.Info("confirmation executed", "confirmation_id", shortID(id), "user_id", userID, "intent_type", confirmation.Intent.Type)
+	s.recordOpenTrade(ctx, userID, confirmation, result)
 	s.recordClosedTrade(ctx, userID, confirmation, result)
 
 	return result, nil
@@ -407,10 +439,58 @@ func (s *Service) failExecutingConfirmation(ctx context.Context, id string, conf
 	)
 }
 
+// recordOpenTrade journals the decision context at entry confirmation. The row
+// is keyed by the entry confirmation id so exchange-side TP/SL exits can update
+// the same record later.
+func (s *Service) recordOpenTrade(ctx context.Context, userID int64, confirmation Confirmation, result ExecutionResult) {
+	if s.journal == nil || confirmation.Intent.Type != domain.IntentOpen || confirmation.Intent.Open == nil {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(result.Mode), "dry_run") {
+		return
+	}
+	open := confirmation.Intent.Open
+	tp := decimal.Zero()
+	if len(open.TakeProfits) > 0 {
+		tp = open.TakeProfits[0]
+	}
+	trade := journal.Trade{
+		ID:             confirmation.ID,
+		UserID:         userID,
+		CampaignID:     strings.TrimSpace(open.CampaignID),
+		ConfirmationID: confirmation.ID,
+		Symbol:         open.Symbol,
+		Side:           string(open.Side),
+		Strategy:       strings.TrimSpace(open.Strategy),
+		Models:         append([]string(nil), open.Models...),
+		Reason:         strings.TrimSpace(open.Reason),
+		Confidence:     open.Confidence,
+		Leverage:       open.Leverage,
+		Mode:           result.Mode,
+		Entry:          open.Entry,
+		StopLoss:       open.StopLoss,
+		TakeProfit:     tp,
+		Outcome:        journal.OutcomeOpen,
+		OpenedAt:       s.clock(),
+	}
+	switch open.Size.Kind {
+	case domain.SizeUSDT:
+		trade.SizeUSDT = open.Size.Amount
+	case domain.SizeQty:
+		trade.Quantity = open.Size.Amount
+	}
+	if result.Quantity.IsPositive() {
+		trade.Quantity = result.Quantity
+	}
+	if err := s.journal.Record(ctx, trade); err != nil {
+		s.logger.Warn("journal open record failed", "confirmation_id", shortID(confirmation.ID), "error", err)
+	}
+}
+
 // recordClosedTrade journals a completed round-trip when a close executes, using
-// the realized PnL the executor reported. Only closes are journaled, so each
-// resolved trade is counted once with its win/loss outcome. Best-effort: a
-// journal failure must not fail the trade that already executed.
+// the realized PnL the executor reported. When the close carries an entry
+// confirmation id it atomically closes that open row; otherwise it falls back to
+// a standalone close row for manual legacy closes.
 func (s *Service) recordClosedTrade(ctx context.Context, userID int64, confirmation Confirmation, result ExecutionResult) {
 	if s.journal == nil || confirmation.Intent.Type != domain.IntentClose {
 		return
@@ -422,6 +502,26 @@ func (s *Service) recordClosedTrade(ctx context.Context, userID int64, confirmat
 		outcome = journal.OutcomeWin
 	case result.RealizedPnL.Cmp(decimal.Zero()) < 0:
 		outcome = journal.OutcomeLoss
+	}
+
+	entryConfirmationID := ""
+	if confirmation.Intent.Close != nil {
+		entryConfirmationID = strings.TrimSpace(confirmation.Intent.Close.EntryConfirmationID)
+	}
+	if entryConfirmationID != "" {
+		_, ok, err := s.journal.Close(ctx, entryConfirmationID, journal.CloseUpdate{
+			Exit:     result.ExitPrice,
+			PnLUSDT:  result.RealizedPnL,
+			Outcome:  outcome,
+			ClosedAt: s.clock(),
+			Mode:     result.Mode,
+		})
+		if err != nil {
+			s.logger.Warn("journal close update failed", "entry_confirmation_id", shortID(entryConfirmationID), "confirmation_id", shortID(confirmation.ID), "error", err)
+		} else if !ok {
+			s.logger.Warn("journal close update skipped", "entry_confirmation_id", shortID(entryConfirmationID), "confirmation_id", shortID(confirmation.ID), "reason", "open row not found")
+		}
+		return
 	}
 
 	if err := s.journal.Record(ctx, journal.Trade{

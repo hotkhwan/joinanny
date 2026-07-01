@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"bottrade/internal/decimal"
 	"bottrade/internal/domain"
 	"bottrade/internal/orders"
 
@@ -34,6 +35,11 @@ type executionResultDoc struct {
 	Mode          string `bson:"mode"`
 	ClientOrderID string `bson:"client_order_id"`
 	Message       string `bson:"message"`
+	Quantity      string `bson:"quantity,omitempty"`
+	Symbol        string `bson:"symbol,omitempty"`
+	Side          string `bson:"side,omitempty"`
+	ExitPrice     string `bson:"exit_price,omitempty"`
+	RealizedPnL   string `bson:"realized_pnl,omitempty"`
 }
 
 const terminalConfirmationRetention = 90 * 24 * time.Hour
@@ -301,6 +307,11 @@ func newExecutionResultDoc(result orders.ExecutionResult) executionResultDoc {
 		Mode:          result.Mode,
 		ClientOrderID: result.ClientOrderID,
 		Message:       result.Message,
+		Quantity:      result.Quantity.String(),
+		Symbol:        result.Symbol,
+		Side:          result.Side,
+		ExitPrice:     result.ExitPrice.String(),
+		RealizedPnL:   result.RealizedPnL.String(),
 	}
 }
 
@@ -312,5 +323,14 @@ func (d confirmationDoc) result() orders.ExecutionResult {
 		Mode:          d.Result.Mode,
 		ClientOrderID: d.Result.ClientOrderID,
 		Message:       d.Result.Message,
+		Quantity:      parseResultDecimal(d.Result.Quantity),
+		Symbol:        d.Result.Symbol,
+		Side:          d.Result.Side,
+		ExitPrice:     parseResultDecimal(d.Result.ExitPrice),
+		RealizedPnL:   parseResultDecimal(d.Result.RealizedPnL),
 	}
+}
+
+func parseResultDecimal(s string) decimal.Decimal {
+	return parseDecimal(s)
 }

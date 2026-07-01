@@ -65,10 +65,14 @@ durable-close poller ([scheduled_close.go](../../internal/api/scheduled_close.go
   is gone → the trade closed (TP or SL). **Side-match is mandatory** (same lesson as
   the H1 durable-close fix) so an unrelated same-symbol position is never mistaken
   for this mission's exit.
-- On detected close, read realized PnL + exit price from Binance **income history**
-  (`/fapi/v1/income`, `REALIZED_PNL`) and/or user trades since `openedAt` — a NEW
-  exchange-boundary read (see below). Write the journal close: net `RealizedPnL`,
+- On detected close, read realized PnL + exit price from Binance user trades
+  since `openedAt` — a NEW exchange-boundary read (see below). Write the journal
+  close: net `RealizedPnL`,
   exit price, closedAt, outcome (win/loss).
+- Fidelity guard: a journal row must carry the entry quantity, and the reconciler
+  only records after exit-side fills close that quantity. Commission/income rows
+  alone are insufficient, and later same-symbol round-trips must be ignored by
+  bounding attribution FIFO to the entry quantity.
 - **Idempotency:** flip the journal row `open→closed` with an atomic conditional
   update (single-winner, like the scheduled-close claim) so two instances / two poll
   ticks never double-record. **Restart-safe:** state lives in the journal (Mongo).
@@ -78,13 +82,21 @@ populate the journal — its "real" feed
 ([recorder.go](../../internal/api/recorder.go)) stops being empty for missions and
 renders model reason/confidence.
 
+**A5. Legal/UI guard for result surfaces.** Every recorder/result surface must
+label PnL by source (`paper`, `testnet`, or `exchange realized`/`live`) so a
+simulation can never be mistaken for an exchange result. Copy must avoid
+guaranteed/expected-return wording: no "guaranteed", "expected return",
+"launch ready" as a profit claim, or "AI made $X". Prefer "paper simulation",
+"testnet realized", "meets paper rules", and the product disclaimer wording from
+`docs/legal/thai-sec-design-principles.md`.
+
 ## New exchange surface (flag for review)
 
 The reconciler needs a **realized-PnL read** the executor doesn't expose today
 (current close reads live `UnrealizedProfit`, [executor.go:363](../../internal/exchange/binance/executor.go#L363)).
-Add an interface method at the exchange boundary (e.g. `IncomeHistory` / `UserTrades`
-for a symbol since a timestamp) with a mock, keeping exchange mockable per the Go
-style skill. Keep it testnet-only via the existing gate.
+Add an interface method at the exchange boundary (`UserTrades` for a symbol since
+a timestamp, bounded by the entry quantity) with a mock, keeping exchange mockable
+per the Go style skill. Keep it testnet-only via the existing gate.
 
 ## Correlation / identity (decided)
 
@@ -102,8 +114,13 @@ journal record via that id.
 - Reconciler is single-winner (atomic open→closed) — no double-record across two
   ticks / two instances; restart re-reads open rows and still reconciles.
 - Opposite-side same-symbol position does NOT trigger a false close (H1 lesson).
+- Commission/income immediately after entry does NOT false-close a mission before
+  an exit-side fill exists; multiple same-symbol round-trips after mission close
+  do NOT leak into the mission PnL.
 - Gate closed / no active testnet key → reconciler records nothing.
 - Recorder renders a complete real mission record once the round-trip is journaled.
+- Recorder/dashboard text preserves source labels (`paper`, `testnet`, `live`) and
+  does not present simulated or testnet PnL as guaranteed/expected returns.
 
 ## Sequencing / dependency
 

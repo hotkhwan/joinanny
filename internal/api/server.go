@@ -228,6 +228,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger.Info("armed missions rehydrated", "count", n)
 	}
 	s.startScheduledClosePoller(ctx)
+	s.startMissionResultReconciler(ctx)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

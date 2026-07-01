@@ -603,6 +603,7 @@ func (s *Server) intentForArmedMission(mission ArmedMission, side string, entry 
 	decision := signals.Decision{
 		Action:     signals.ActionOpen,
 		Symbol:     mission.Symbol,
+		Strategy:   missionStrategyID(annybasic.ID),
 		Side:       side,
 		Leverage:   leverage,
 		Entry:      trimPrice(entry),
@@ -611,7 +612,14 @@ func (s *Server) intentForArmedMission(mission ArmedMission, side string, entry 
 		SizeUSDT:   fmt.Sprintf("%.2f", size),
 		Reason:     reason,
 	}
-	return signals.DecisionToIntent(decision, missionMaxLeverage)
+	intent, err := signals.DecisionToIntent(decision, missionMaxLeverage)
+	if err != nil {
+		return domain.Intent{}, err
+	}
+	if intent.Open != nil {
+		intent.Open.CampaignID = "mission"
+	}
+	return intent, nil
 }
 
 func (s *Server) armedMissionRuntimeAllowed() bool {

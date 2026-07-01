@@ -457,7 +457,7 @@
           <div id="g-reco" class="reco hidden"></div>
           <div class="ticket">
             <div class="grid2">
-              <div><label for="g-profit">Profit target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
+              <div><label for="g-profit">Target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
               <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
             </div>
             <div class="grid2">
@@ -481,11 +481,11 @@
                 <div class="bcard-sym" id="bc-sym">—</div>
                 <div class="bcard-tags" id="bc-tags"></div>
               </div>
-              <span class="bcard-net" id="bc-mode" title="Paper run — simulated on real Binance candles. No real orders, no real money. Just proof of how the strategy would have done.">PAPER ⓘ</span>
+              <span class="bcard-net" id="bc-mode" title="Paper simulation on historical Binance candles. No real orders, no real money, not a prediction or guarantee.">PAPER ⓘ</span>
             </div>
             <div class="bcard-mid">
               <div>
-                <div class="bcard-lbl" id="bc-pnl-label">Estimated net PnL (USDT)</div>
+                <div class="bcard-lbl" id="bc-pnl-label">Paper simulation PnL (USDT)</div>
                 <div class="bcard-num mono" id="bc-pnl">+0.00</div>
                 <div class="bcard-roi mono" id="bc-roi"></div>
               </div>
@@ -1497,17 +1497,17 @@
         $("bc-mode").textContent = needsEdit ? "EDIT PLAN" : "PAPER ⓘ";
         $("bc-mode").title = needsEdit
           ? "No actionable setup was found in this validation window. Change the plan before launching."
-          : "Paper run — simulated on real Binance candles. No real orders, no real money. Just proof of how the strategy would have done.";
-        $("bc-pnl-label").textContent = needsEdit ? "Assessment status" : "Estimated net PnL (USDT)";
+          : "Paper simulation on historical Binance candles. No real orders, no real money, not a prediction or guarantee.";
+        $("bc-pnl-label").textContent = needsEdit ? "Assessment status" : "Paper simulation PnL (USDT)";
         if (needsEdit) {
           $("bc-pnl").textContent = "Needs edit";
           $("bc-pnl").className = "bcard-num mono status";
-          $("bc-roi").textContent = "No paper result to launch";
+          $("bc-roi").textContent = "No paper evidence for testnet review";
           $("bc-roi").className = "bcard-roi mono";
           $("bc-spark").innerHTML = "";
         } else {
           $("bc-pnl").textContent = (up ? "+" : "") + (Math.round(pnl * 100) / 100); $("bc-pnl").className = "bcard-num mono " + (up ? "up" : "down");
-          $("bc-roi").textContent = (up ? "+" : "") + (Math.round(roi * 100) / 100) + "% ROI"; $("bc-roi").className = "bcard-roi mono " + (up ? "up" : "down");
+          $("bc-roi").textContent = (up ? "+" : "") + (Math.round(roi * 100) / 100) + "% paper window only"; $("bc-roi").className = "bcard-roi mono " + (up ? "up" : "down");
           $("bc-spark").innerHTML = (d.curve && d.curve.length) ? bcardSpark(d.curve.map(Number)) : "";
         }
         const cells = needsEdit ? [
@@ -1522,12 +1522,12 @@
           ["Capital risk", (st.risk_pct || 0) + "%", ""],
           ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ] : [
-          ["Win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%", ""],
+          ["Paper win rate", (Math.round((st.win_rate_pct || 0) * 10) / 10) + "%", ""],
           ["RR", st.reward_risk ? ("1 : " + st.reward_risk) : "—", "up"],
-          ["Edge / trade", expFmt(st.expectancy_per_trade), expCls(st.expectancy_per_trade)],
+          ["Paper avg / trade", expFmt(st.expectancy_per_trade), expCls(st.expectancy_per_trade)],
           ["Trades", String(st.trades || 0), ""],
           ["W / L", (st.wins || 0) + " / " + (st.losses || 0), ""],
-          ["Launch ready", canLaunchGoal(st) ? "Yes" : "No", canLaunchGoal(st) ? "up" : "down"],
+          ["Rule eligibility", canLaunchGoal(st) ? "Eligible" : "Review", canLaunchGoal(st) ? "up" : "down"],
           ["Entries needed", String(st.estimated_entries || "—"), ""],
           ["Validation", st.validation_window || st.duration || "—", ""],
           ["Capital", cap + " USDT", ""],
@@ -1780,7 +1780,7 @@
           const since = st.since ? new Date(st.since).toLocaleDateString() : "—";
           $("rec-stats").innerHTML = [
             ["Live since", since], ["Real trades", st.real_trades || 0],
-            ["Win rate", Math.round(st.real_win_rate || 0) + "%"], ["Real PnL", fmtPnl(st.real_pnl) + " USDT"],
+            ["Realized win rate", Math.round(st.real_win_rate || 0) + "%"], ["Realized PnL", fmtPnl(st.real_pnl) + " USDT"],
             ["Paper runs", st.paper_runs || 0], ["Transparency", (st.transparency ?? 100) + "%"],
           ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${escapeHtml(String(v))}</div></div>`).join("");
           const root = d.merkle_root || "";
@@ -1800,10 +1800,11 @@
         const pnl = Number(e.pnl) || 0;
         const lev = e.leverage ? " " + e.leverage + "x" : "";
         const auto = e.autonomous ? '<span class="flag auto">auto</span>' : "";
+        const source = e.pnl_source || e.label || "";
         return `<div class="mission tap" data-mi="${i}">`
           + `<div class="flight"><span class="fsym">Mission #${e.mission_no}</span><span class="flag ${escapeHtml(e.label)}">${escapeHtml(e.label)}</span>${auto}<span class="fpnl ${pnl >= 0 ? "up" : "down"}">${fmtPnl(e.pnl)}</span></div>`
           + `<div class="fmeta">${escapeHtml(e.symbol)} · ${escapeHtml((e.side || e.action) + lev)}${e.reason ? " · " + escapeHtml(e.reason) : ""}</div>`
-          + `<div class="fhash">${escapeHtml((e.hash || "").slice(0, 20))}… · ${escapeHtml(when)} · <span class="replayhint">▶ replay</span></div>`
+          + `<div class="fhash">${escapeHtml(source)} · ${escapeHtml((e.hash || "").slice(0, 20))}… · ${escapeHtml(when)} · <span class="replayhint">▶ replay</span></div>`
           + `</div>`;
       }
 
@@ -1820,7 +1821,8 @@
         if (e.side) steps.push(["🧭", "Direction", e.side.toUpperCase() + (e.leverage ? " " + e.leverage + "x" : "")]);
         if (e.entry && Number(e.entry) > 0) steps.push(["🎯", "Entry", formatPrice(e.entry)]);
         if (e.exit && Number(e.exit) > 0) steps.push(["🏁", "Exit", formatPrice(e.exit)]);
-        steps.push(["📊", "Result · " + e.label, fmtPnl(e.pnl) + (e.label === "paper" ? " USDT (paper)" : " USDT"), pnl >= 0 ? "up" : "down"]);
+        const source = e.pnl_source || e.label || "";
+        steps.push(["📊", "Result · " + source, fmtPnl(e.pnl) + " USDT (" + source + ")", pnl >= 0 ? "up" : "down"]);
         steps.push(["🔒", "Verified hash", (e.hash || "").slice(0, 32) + "…"]);
         $("replay-title").textContent = "Mission #" + e.mission_no + " · Replay";
         $("replay-steps").innerHTML = steps.map((s) => replayStep(s[0], s[1], s[2], s[3])).join("");
@@ -1933,7 +1935,7 @@
         });
         const wr = (wins + losses) ? Math.round((wins / (wins + losses)) * 1000) / 10 : 0;
         $("report").innerHTML = [
-          ["Runs", histRuns.length, ""], ["Trades", trades, ""], ["Win rate", wr + "%", ""],
+          ["Runs", histRuns.length, ""], ["Trades", trades, ""], ["Paper win rate", wr + "%", ""],
           ["Total PnL", fmtPnl(pnl), pnl >= 0 ? "up" : "down"], ["Avg / run", fmtPnl(pnl / histRuns.length), pnl >= 0 ? "up" : "down"], ["Wins / Losses", wins + " / " + losses, ""],
         ].map(([k, v, cls]) => `<div class="stat"><div class="k">${k}</div><div class="v ${cls}">${escapeHtml(String(v))}</div></div>`).join("");
         // By coin, best PnL first.

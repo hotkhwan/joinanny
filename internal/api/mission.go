@@ -177,6 +177,7 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	decision := signals.Decision{
 		Action:     signals.ActionOpen,
 		Symbol:     symbol,
+		Strategy:   missionStrategyID(strategyName),
 		Side:       side,
 		Leverage:   leverage,
 		Entry:      trimPrice(entry),
@@ -190,6 +191,9 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	intent, err := signals.DecisionToIntent(decision, missionMaxLeverage)
 	if err != nil {
 		return c.JSON(fiber.Map{"output": "⚠️ Could not build the mission: " + err.Error()})
+	}
+	if intent.Open != nil {
+		intent.Open.CampaignID = "mission"
 	}
 	confirmation, err := s.orders.Prepare(c.Context(), userID, intent)
 	if err != nil {
@@ -243,6 +247,13 @@ func (s *Server) annyBasicLiveDecision(ctx context.Context, symbol string, execu
 		return annybasic.Decision{Reason: err.Error()}, nil
 	}
 	return annybasic.Evaluate(obs, annybasic.State{RealizedPnLUSDT: decimal.Zero()}, missionMaxLeverage), nil
+}
+
+func missionStrategyID(strategy string) string {
+	if strategy == annybasic.ID {
+		return annybasic.ID + "_v" + annybasic.Version
+	}
+	return strings.TrimSpace(strategy)
 }
 
 func minPositive(a, b int) int {

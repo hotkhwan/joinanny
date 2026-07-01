@@ -44,10 +44,10 @@ const ScheduledCloseClaimTimeout = 5 * time.Minute
 // protective plumbing: the poller closes an open position after the plan window
 // survives API restarts.
 type ScheduledClose struct {
-	ID                  string               `json:"id" bson:"_id"`
-	UserKey             string               `json:"-" bson:"user_key"`
-	UserID              int64                `json:"-" bson:"user_id"`
-	Symbol              string               `json:"symbol" bson:"symbol"`
+	ID      string `json:"id" bson:"_id"`
+	UserKey string `json:"-" bson:"user_key"`
+	UserID  int64  `json:"-" bson:"user_id"`
+	Symbol  string `json:"symbol" bson:"symbol"`
 	// Side is the mission position's direction ("long"/"short"). The poller only
 	// closes an open position that matches this side, so a timed close can never
 	// flatten an unrelated opposite-side position on the same symbol. Empty on
@@ -436,6 +436,7 @@ func (s *Server) handleScheduledClose(ctx context.Context, id string, now time.T
 	}
 	intent := domain.Intent{Type: domain.IntentClose, Close: &domain.CloseIntent{
 		Symbol: close.Symbol, All: true, ResolvedPercent: decimal.NewFromInt(100),
+		EntryConfirmationID: close.EntryConfirmationID,
 	}}
 	confirmation, err := s.orders.Prepare(ctx, close.UserID, intent)
 	if err != nil {

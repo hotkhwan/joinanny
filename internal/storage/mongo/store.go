@@ -339,6 +339,17 @@ func (s *Store) ensureIndexes(ctx context.Context) error {
 			Options: options.Index().SetName("journal_user_closed_at"),
 		},
 		{
+			Keys: bson.D{
+				{Key: "outcome", Value: 1},
+				{Key: "opened_at", Value: 1},
+			},
+			Options: options.Index().SetName("journal_outcome_opened_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "confirmation_id", Value: 1}},
+			Options: options.Index().SetName("journal_confirmation_id").SetSparse(true),
+		},
+		{
 			Keys:    bson.D{{Key: "campaign_id", Value: 1}},
 			Options: options.Index().SetName("journal_campaign").SetSparse(true),
 		},
