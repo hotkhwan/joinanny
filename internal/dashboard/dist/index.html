@@ -507,8 +507,13 @@
         <div class="card" id="live-card">
           <div class="flow-step"><span class="flow-no">3</span><strong>Launch &amp; confirm</strong></div>
           <p id="g-step3-sub" style="margin:0.3rem 0">Review the proposed testnet order. Nothing is placed until you confirm.</p>
+          <label id="g-multitrade-row" style="display:flex;align-items:center;gap:0.4rem;margin:0.3rem 0 0.5rem;font-size:0.9rem;cursor:pointer"><input type="checkbox" id="g-multitrade"/> Multi-trade mission<span class="ibadge" data-info="One confirmation authorizes a bounded series of automatic testnet re-entries toward your target. ANNY opens and closes capped ANNY Basic trades until the target, two consecutive losses, the 15-trade cap, or the plan window ends — whichever comes first. Testnet only. You can disarm any time. Not financial advice.">ⓘ</span></label>
           <pre id="g-confirm-out" class="output hidden"></pre>
           <div id="g-armed-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
+          <div id="g-campaign-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
+          <div id="g-campaign-actions" class="actions hidden">
+            <button class="ghost" id="g-campaign-disarm">Disarm mission</button>
+          </div>
           <div id="g-confirm-actions" class="actions hidden">
             <button class="primary" id="g-confirm-yes">Confirm mission</button>
             <button class="ghost" id="g-confirm-no">Cancel</button>
@@ -875,7 +880,7 @@
         ["home", "orders", "history", "community", "settings", "login"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
         document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === name));
         if (name === "home") { loadHome(); startHomePolling(); } else { stopHomePolling(); }
-        if (name === "orders") { refreshKeyStatus(); loadGoalHistory(); loadLeaderboard(); loadArmedMissions(); startPositionsPolling(); } else { stopPositionsPolling(); }
+        if (name === "orders") { refreshKeyStatus(); loadGoalHistory(); loadLeaderboard(); loadArmedMissions(); loadCampaignMissions(); startPositionsPolling(); } else { stopPositionsPolling(); }
         if (name === "history") { loadRecorder(); loadHistory(); }
         if (name === "community") loadLeaderboard();
         if (name === "settings") refreshKeyStatus();
@@ -1623,10 +1628,28 @@
           $("g-run").focus();
           return;
         }
+        const body = Object.assign({}, lastGoalRequest);
+        if ($("g-multitrade") && $("g-multitrade").checked) {
+          if (!confirm("Start a LIVE multi-trade testnet Mission? One confirmation authorizes a bounded SERIES of automatic capped entries toward your target — ANNY opens and closes trades until the target, two consecutive losses, the 15-trade cap, or the plan window ends. Testnet only. Disarm any time. Not financial advice.")) return;
+          goalMsg("Starting multi-trade mission…", true);
+          $("g-live").disabled = true;
+          try {
+            const r = await fetch("/api/mission/campaign/arm", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
+            goalMsg("");
+            if (d.need_key) { goalMsg("Add & activate a Binance key in Settings first."); navigate("settings"); return; }
+            $("g-confirm-out").textContent = d.output || ""; $("g-confirm-out").classList.remove("hidden");
+            if (d.campaign) setCampaignState(d.campaign);
+            addMissionActivity(d.output || "Multi-trade mission started.");
+            $("live-card").scrollIntoView({ behavior: "smooth", block: "start" });
+          } catch (e) { goalMsg("Network error"); }
+          finally { $("g-live").disabled = false; }
+          return;
+        }
         if (!confirm("Run a LIVE testnet Mission? If no setup is live, ANNY can arm the plan and auto-place one capped testnet entry inside this window. No setup is guaranteed.")) return;
         goalMsg("Preparing live Mission…", true);
         $("g-live").disabled = true;
-        const body = Object.assign({}, lastGoalRequest);
         try {
           const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));
@@ -1683,6 +1706,57 @@
         finally { $("g-disarm").disabled = false; }
       }
       $("g-disarm").onclick = disarmMission;
+      // ---- multi-trade mission (campaign) status ----
+      let campaignMission = null, campaignPollTimer = null, campaignTickTimer = null;
+      function fmtCampaign(m) {
+        const exp = new Date(m.expires_at).getTime();
+        const left = exp - Date.now();
+        const pnl = fmtPnl(m.realized_pnl_usdt);
+        const trades = m.trades_closed || 0;
+        if (m.status === "running" && left > 0)
+          return `🤖 Mission · ${m.symbol || ""} · ${trades}t · ${pnl} USDT · target ${m.target_profit_usdt} · ends in ${fmtCountdown(left)}`;
+        const label = { reached: "🎯 Target reached", stopped: "⏹ Stopped", expired: "⌛ Window ended", disarmed: "Disarmed" }[m.status] || m.status;
+        return `${label} · ${m.symbol || ""} · ${trades}t · ${pnl} USDT`;
+      }
+      function isCampaignRunning(m) { return m && m.status === "running" && new Date(m.expires_at).getTime() > Date.now(); }
+      function renderCampaign() {
+        const box = $("g-campaign-status");
+        if (!campaignMission) { box.classList.add("hidden"); $("g-campaign-actions").classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        box.style.color = isCampaignRunning(campaignMission) ? "var(--primary)" : "var(--muted)";
+        box.textContent = fmtCampaign(campaignMission);
+        $("g-campaign-actions").classList.toggle("hidden", !isCampaignRunning(campaignMission));
+      }
+      function setCampaignState(m) {
+        campaignMission = m; renderCampaign();
+        clearInterval(campaignTickTimer); clearInterval(campaignPollTimer);
+        if (isCampaignRunning(m)) {
+          campaignTickTimer = setInterval(renderCampaign, 1000);
+          campaignPollTimer = setInterval(pollCampaign, pollMs());
+        }
+      }
+      async function pollCampaign() {
+        try {
+          const d = await (await fetch("/api/mission/campaign", { headers: authHeaders() })).json();
+          const rows = (d && d.campaign) || [];
+          const latest = rows.find(isCampaignRunning) || rows[0];
+          if (!latest) { setCampaignState(null); return; }
+          campaignMission = latest; renderCampaign();
+          if (!isCampaignRunning(latest)) { clearInterval(campaignPollTimer); clearInterval(campaignTickTimer); }
+        } catch (e) {}
+      }
+      async function loadCampaignMissions() { await pollCampaign(); }
+      async function disarmCampaign() {
+        if (!campaignMission) return;
+        const id = campaignMission.id;
+        $("g-campaign-disarm").disabled = true;
+        try {
+          const d = await (await fetch("/api/mission/campaign/disarm", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id }) })).json();
+          addMissionActivity(d.output || "Mission disarmed.");
+          if (d.campaign) setCampaignState(d.campaign); else setCampaignState(null);
+        } catch (e) {} finally { $("g-campaign-disarm").disabled = false; }
+      }
+      $("g-campaign-disarm").onclick = disarmCampaign;
       // ---- live positions (the user's own testnet account) ----
       async function loadPositions() {
         const box = $("positions"); if (!box) return;
