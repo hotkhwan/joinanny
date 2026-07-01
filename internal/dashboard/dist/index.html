@@ -787,6 +787,22 @@
           if (b.dataset.idle !== undefined) { b.innerHTML = b.dataset.idle; delete b.dataset.idle; }
         }
       }
+      // typeInto reveals text progressively (LLM-style) into an element. Total time
+      // is bounded (~2s) regardless of length; a new call cancels the previous run.
+      let typeTimer = null;
+      function typeInto(el, text) {
+        if (!el) return;
+        if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+        text = String(text == null ? "" : text);
+        el.textContent = "";
+        const step = Math.max(1, Math.ceil(text.length / 120));
+        let i = 0;
+        typeTimer = setInterval(() => {
+          i += step;
+          el.textContent = text.slice(0, i);
+          if (i >= text.length) { clearInterval(typeTimer); typeTimer = null; el.textContent = text; }
+        }, 18);
+      }
       // Any ⓘ badge shows its data-info on tap; tapping elsewhere closes menus.
       document.addEventListener("click", (e) => {
         const b = e.target.closest(".ibadge");
@@ -1250,7 +1266,7 @@
         try {
           const r = await fetch("/api/command", { method: "POST", headers: authHeaders(), body: JSON.stringify({ command }) });
           const d = await r.json().catch(() => ({}));
-          cmdOut.textContent = d.output || d.error || `Failed (${r.status})`;
+          typeInto(cmdOut, d.output || d.error || `Failed (${r.status})`);
           if (d.curve && d.curve.length) cmdSpark.innerHTML = sparkline(d.curve.map(Number));
           if (d.confirm_id) { pendingConfirmId = d.confirm_id; cmdConfirm.classList.remove("hidden"); }
         } catch (e) { cmdOut.textContent = "Network error"; }
@@ -1792,7 +1808,9 @@
         try {
           const d = await (await fetch("/api/mission/campaign/disarm", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id }) })).json();
           addMissionActivity(d.output || "Mission disarmed.");
-          if (d.campaign) setCampaignState(d.campaign); else setCampaignState(null);
+          // Clear the status line so it doesn't linger as "Disarmed"; the toast
+          // explains what happens next and the config section invites a new plan.
+          setCampaignState(null);
           showToast("Mission disarmed — no new entries. An open trade (if any) finishes on its own exit. Assess a new plan above to start again.");
           setTimeout(loadPositions, 1200);
         } catch (e) { showToast("Network error while disarming."); }
