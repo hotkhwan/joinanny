@@ -8,6 +8,22 @@ import (
 	"bottrade/internal/marketdata"
 )
 
+// TestV13TuningKeepsSetupsReachable locks the v1.3 entry-filter loosening so a
+// future edit cannot silently revert to the over-selective v1.2 gating that made
+// live armed windows expire without ever finding a setup. See
+// docs/model/model-template-and-autotune-spec.md §2.
+func TestV13TuningKeepsSetupsReachable(t *testing.T) {
+	if cdcFreshResetBars != 0 {
+		t.Fatalf("cdcFreshResetBars = %d, want 0 so established trends still qualify", cdcFreshResetBars)
+	}
+	if qqeFreshCrossBars < signalFreshMainBars {
+		t.Fatalf("qqeFreshCrossBars = %d, want >= %d (must not narrow the QQE window)", qqeFreshCrossBars, signalFreshMainBars)
+	}
+	if sidewaySpreadPct > 0.001 {
+		t.Fatalf("sidewaySpreadPct = %v, want <= 0.001 (only block genuinely flat markets)", sidewaySpreadPct)
+	}
+}
+
 func TestCDCZone(t *testing.T) {
 	up := sequence(100, 1, 100)
 	if got, ok := cdcZone(up); !ok || got != CDCGreen {

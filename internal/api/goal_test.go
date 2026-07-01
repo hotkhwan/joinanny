@@ -245,7 +245,7 @@ func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
 		{
 			name: "market condition",
 			res: campaign.PaperResult{
-				Strategy:    "anny_basic_v1.2",
+				Strategy:    "anny_basic_v1.3",
 				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "no-trade market condition"},
 			},
 			want: "market-condition filter",
@@ -253,7 +253,7 @@ func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
 		{
 			name: "entry extended maps to market condition",
 			res: campaign.PaperResult{
-				Strategy:    "anny_basic_v1.2",
+				Strategy:    "anny_basic_v1.3",
 				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "entry extended from trend"},
 			},
 			want: "market-condition filter",
@@ -261,7 +261,7 @@ func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
 		{
 			name: "cdc qqe alignment",
 			res: campaign.PaperResult{
-				Strategy:    "anny_basic_v1.2",
+				Strategy:    "anny_basic_v1.3",
 				Diagnostics: campaign.PaperDiagnostics{TopBlocker: "CDC and QQE are not aligned"},
 			},
 			want: "CDC/QQE did not align",
@@ -269,7 +269,7 @@ func TestAnnyBasicBlockedReasonUsesDiagnostics(t *testing.T) {
 		{
 			name: "ai side filter",
 			res: campaign.PaperResult{
-				Strategy: "anny_basic_v1.2",
+				Strategy: "anny_basic_v1.3",
 				Diagnostics: campaign.PaperDiagnostics{
 					SetupsFound:  1,
 					BiasRejected: 1,

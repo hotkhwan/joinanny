@@ -260,7 +260,7 @@ func TestRunPaperANNYBasicUsesDualTimeframes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunPaper(anny_basic): %v", err)
 	}
-	if res.Strategy != "anny_basic_v1.2" {
+	if res.Strategy != "anny_basic_v1.3" {
 		t.Fatalf("strategy = %q", res.Strategy)
 	}
 	if res.Bars != len(exec) {

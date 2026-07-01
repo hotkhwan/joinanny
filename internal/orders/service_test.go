@@ -82,7 +82,7 @@ func TestServiceJournalsOpenAndStandaloneClosedTrade(t *testing.T) {
 		t.Fatalf("journaled %d trades after open, want 1", len(jrnl.trades))
 	}
 	open := jrnl.trades[0]
-	if open.ID != openConf.ID || open.Outcome != journal.OutcomeOpen || open.Strategy != "anny_basic_v1.2" ||
+	if open.ID != openConf.ID || open.Outcome != journal.OutcomeOpen || open.Strategy != "anny_basic_v1.3" ||
 		open.Reason != "CDC and QQE aligned" || open.CampaignID != "mission" {
 		t.Fatalf("open journal row = %+v, want persisted mission context", open)
 	}
@@ -386,7 +386,7 @@ func testOpenIntent() domain.Intent {
 				Kind:   domain.SizeUSDT,
 				Amount: decimal.MustParse("100"),
 			},
-			Strategy:   "anny_basic_v1.2",
+			Strategy:   "anny_basic_v1.3",
 			Models:     []string{"rules"},
 			Reason:     "CDC and QQE aligned",
 			Confidence: 82,

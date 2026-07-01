@@ -7,7 +7,7 @@ import "bottrade/internal/decimal"
 const (
 	ID      = "anny_basic"
 	Name    = "ANNY Basic"
-	Version = "1.2"
+	Version = "1.3"
 )
 
 type Side string

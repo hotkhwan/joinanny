@@ -69,7 +69,7 @@ func seedOpenMissionResult(t *testing.T, svc *journal.Service, side string) jour
 		ConfirmationID: "entry-1",
 		Symbol:         "BTCUSDT",
 		Side:           side,
-		Strategy:       "anny_basic_v1.2",
+		Strategy:       "anny_basic_v1.3",
 		Reason:         "CDC and QQE aligned",
 		Leverage:       3,
 		Mode:           "binance_testnet",
@@ -123,7 +123,7 @@ func TestMissionResultReconcilerClosesGoneSideMatchedPosition(t *testing.T) {
 	}
 	trades, _ := jsvc.List(context.Background(), journal.Filter{ClosedOnly: true})
 	if len(trades) != 1 || trades[0].Outcome != journal.OutcomeWin || trades[0].PnLUSDT.String() != "1.75" ||
-		trades[0].Exit.String() != "102" || trades[0].Strategy != "anny_basic_v1.2" {
+		trades[0].Exit.String() != "102" || trades[0].Strategy != "anny_basic_v1.3" {
 		t.Fatalf("closed trades = %+v, want complete winning mission row", trades)
 	}
 	if exec.requestedQty.String() != "0.01" {

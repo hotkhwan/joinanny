@@ -1,11 +1,22 @@
-# ANNY Basic — Model Card (v1.2)
+# ANNY Basic — Model Card (v1.3)
+
+> **v1.3 change (testnet):** the entry filter was over-selective — it required a
+> *fresh* 15m CDC flip (≤1h old) to coincide with a fresh QQE cross, so live armed
+> windows almost always expired without a setup. v1.3 lets an **established** green/red
+> trend qualify (enter on a fresh QQE trigger inside the trend, not only in the first
+> hour after a flip), widens the QQE cross window to ~2h, and only blocks *genuinely*
+> flat markets (sideways spread < 0.05% of price). Safety gates (abnormal volatility,
+> entry-extended, execution-alignment) are unchanged. See
+> `docs/model/model-template-and-autotune-spec.md`.
+
+---
 
 > **Transparent by design.** This card explains *what the model does and how it is
 > judged*, not a secret formula. ANNY Basic is the **public, conservative** paper
 > strategy; the live "skill model" keeps its tuned parameters proprietary and
 > exposes only verifiable results. Not financial advice. No guaranteed profit.
 
-- **ID / version:** `anny_basic` · v1.2
+- **ID / version:** `anny_basic` · v1.3
 - **Source of truth:** `internal/strategy/annybasic/` (model), `internal/campaign/paper.go`
   (paper engine), `internal/api/goal.go` (launch gate). Success criteria:
   `docs/strategy/success-model-anny-basic.md`.

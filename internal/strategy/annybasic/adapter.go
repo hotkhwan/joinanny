@@ -10,7 +10,19 @@ import (
 
 const (
 	mainInterval        = 15 * time.Minute
-	signalFreshMainBars = 4 // 4 x 15m = 1h confirmation freshness
+	signalFreshMainBars = 4 // legacy 15m freshness base; kept for helper tests / back-compat
+
+	// v1.3 tuning (see docs/model/model-template-and-autotune-spec.md §2). These
+	// decouple the two freshness gates that previously shared signalFreshMainBars
+	// and made live setups almost never fire inside a short armed window:
+	//   - cdcFreshResetBars = 0 disables the "neutralize an established zone" reset,
+	//     so a trend that is already green/red still qualifies (enter on the QQE
+	//     trigger inside the trend, not only in the first hour after a flip).
+	//   - qqeFreshCrossBars widens the QQE cross window to 8 bars (2h).
+	//   - sidewaySpreadPct only blocks genuinely flat markets (0.05% of price).
+	cdcFreshResetBars = 0
+	qqeFreshCrossBars = 8
+	sidewaySpreadPct  = 0.0005
 )
 
 // ObserveAt builds a closed-candle 15m CDC/QQE observation and confirms it
@@ -29,14 +41,18 @@ func ObserveAt(main15m, execution1m []marketdata.Candle, executionIndex int) (Ob
 	if !ok {
 		return Observation{}, errInsufficientData
 	}
-	if !cdcTransitionFresh(mainCloses, zone, signalFreshMainBars) {
+	// v1.3: only neutralize an aged trend when cdcFreshResetBars > 0. With the
+	// reset disabled (default), an established green/red zone still qualifies, so
+	// entries fire on a fresh QQE trigger inside the trend rather than only in the
+	// first hour after a CDC flip.
+	if cdcFreshResetBars > 0 && !cdcTransitionFresh(mainCloses, zone, cdcFreshResetBars) {
 		zone = CDCNeutral
 	}
 	currentQQE, _, err := qqe(mainCloses)
 	if err != nil {
 		return Observation{}, err
 	}
-	cross := recentQQECross(mainCloses, signalFreshMainBars)
+	cross := recentQQECross(mainCloses, qqeFreshCrossBars)
 
 	exec := execution1m[:executionIndex+1]
 	execCloses := candleCloses(exec)
@@ -61,7 +77,7 @@ func ObserveAt(main15m, execution1m []marketdata.Candle, executionIndex int) (Ob
 	mainATR := averageTrueRange(main, len(main)-1, volatilityPeriod)
 	extended := mainATR > 0 && math.Abs(last.Close-mainFast[len(mainFast)-1]) > 1.5*mainATR
 	abnormal := atr > 0 && trueRange(exec, executionIndex) > 3*atr
-	sideways := last.Close > 0 && cdcSpread(mainCloses)/last.Close < 0.001
+	sideways := last.Close > 0 && cdcSpread(mainCloses)/last.Close < sidewaySpreadPct
 
 	return Observation{
 		CDC15m:             zone,
