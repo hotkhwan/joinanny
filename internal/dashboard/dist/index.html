@@ -468,18 +468,17 @@
           <div id="g-reco" class="reco hidden"></div>
           <div class="ticket">
             <div class="grid2">
-              <div><label for="g-profit">Target (USDT)</label><input id="g-profit" inputmode="decimal" placeholder="10" value="10" autocomplete="off" /></div>
-              <div><label for="g-capital">Capital (USDT)</label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
-            </div>
-            <div class="grid2">
+              <div><label for="g-capital">Capital (USDT) <span class="ibadge" data-info="The simulated capital (risk budget) for this plan. Results are historical estimates on past candles — not a target, promise, or prediction of profit.">ⓘ</span></label><input id="g-capital" inputmode="decimal" placeholder="100" value="100" autocomplete="off" /></div>
               <div><label for="g-risk">Capital risk % <span class="ibadge" data-info="Maximum cumulative loss allowed for this plan, as a percentage of capital. It does not set leverage.">ⓘ</span></label><input id="g-risk" inputmode="numeric" min="1" max="100" placeholder="5" value="5" autocomplete="off" /></div>
-              <div><label for="g-leverage">Leverage use % <span class="ibadge" data-info="Percentage of the permitted leverage ceiling available to the model. Risk checks may choose less.">ⓘ</span></label><input id="g-leverage" inputmode="numeric" min="1" max="100" placeholder="25" value="25" autocomplete="off" /></div>
             </div>
             <div class="grid2">
+              <div><label for="g-leverage">Max leverage use % <span class="ibadge" data-info="Percentage of the permitted leverage ceiling available to the model. Risk checks may choose less.">ⓘ</span></label><input id="g-leverage" inputmode="numeric" min="1" max="100" placeholder="25" value="25" autocomplete="off" /></div>
               <div><label for="g-symbol">Symbol <span class="ibadge" data-info="Symbol-specific limits are checked again before execution.">ⓘ</span></label><select id="g-symbol"><option value="BTC">BTC</option></select></div>
-              <div><label for="g-duration">Plan duration <span class="ibadge" data-info="How long this plan may open positions. A smaller execution timeframe is selected automatically.">ⓘ</span></label><select id="g-duration"><option value="unlimited" selected>∞ until target / stop</option><option value="15m">15m · dev</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="8h">8h</option><option value="12h">12h</option><option value="24h">24h</option><option value="48h">48h</option><option value="1w">1 week</option></select></div>
             </div>
-            <label for="g-strategy">Strategy</label><select id="g-strategy"><option value="auto">✨ Auto (mix strategies)</option><option value="anny_basic">ANNY Basic v1.3</option><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option><option value="macd">MACD</option><option value="sma">SMA cross</option><option value="breakout">Breakout</option></select>
+            <div class="grid2">
+              <div><label for="g-duration">Plan duration <span class="ibadge" data-info="The simulation window — how long this plan may open positions. A smaller execution timeframe is selected automatically.">ⓘ</span></label><select id="g-duration"><option value="unlimited" selected>∞ until stop</option><option value="15m">15m · dev</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="8h">8h</option><option value="12h">12h</option><option value="24h">24h</option><option value="48h">48h</option><option value="1w">1 week</option></select></div>
+              <div><label for="g-strategy">Strategy</label><select id="g-strategy"><option value="auto">✨ Auto (mix strategies)</option><option value="anny_basic">ANNY Basic v1.3</option><option value="ema">EMA cross</option><option value="rsi">RSI reversion</option><option value="macd">MACD</option><option value="sma">SMA cross</option><option value="breakout">Breakout</option></select></div>
+            </div>
             <label class="gai"><input type="checkbox" id="g-ai" checked /> Let AI pick the side (per run)</label>
             <button class="primary" id="g-run" type="button">Assess plan on real data →</button>
             <div id="g-keyhint" class="reco hidden" style="margin-top:0.5rem"></div>
@@ -496,7 +495,7 @@
             </div>
             <div class="bcard-mid">
               <div>
-                <div class="bcard-lbl" id="bc-pnl-label">Paper simulation PnL (USDT)</div>
+                <div class="bcard-lbl" id="bc-pnl-label">Simulated P/L · this window (USDT)</div>
                 <div class="bcard-num mono" id="bc-pnl">+0.00</div>
                 <div class="bcard-roi mono" id="bc-roi"></div>
               </div>
@@ -518,7 +517,7 @@
         <div class="card" id="live-card">
           <div class="flow-step"><span class="flow-no">3</span><strong>Launch &amp; confirm</strong></div>
           <p id="g-step3-sub" style="margin:0.3rem 0">Review the proposed testnet order. Nothing is placed until you confirm.</p>
-          <p id="g-mission-note" style="margin:0.1rem 0 0.4rem;font-size:0.8rem;color:var(--muted)">A Mission runs as a multi-trade campaign — ANNY auto-opens and closes capped entries toward your target until the target, two losses, the 15-trade cap, or the plan window ends. Testnet only. Disarm any time. <span class="ibadge" data-info="One confirmation pre-authorizes a bounded, capped series of automatic testnet re-entries. Entries can result in losses; every trade is recorded. Trading digital assets involves substantial risk. Not financial advice.">ⓘ</span></p>
+          <p id="g-mission-note" style="margin:0.1rem 0 0.4rem;font-size:0.8rem;color:var(--muted)">A Mission runs as a multi-trade campaign within your risk budget — ANNY auto-opens and closes capped entries until two losses, the 15-trade cap, the capital-risk limit, or the plan window ends. Testnet only. Disarm any time. <span class="ibadge" data-info="One confirmation pre-authorizes a bounded, capped series of automatic testnet re-entries within your risk budget. Entries can result in losses; every trade is recorded. Not a target, promise, or prediction of profit. Trading digital assets involves substantial risk. Not financial advice.">ⓘ</span></p>
           <pre id="g-confirm-out" class="output hidden"></pre>
           <div id="g-armed-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
           <div id="g-campaign-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
@@ -1526,8 +1525,12 @@
         return !!(st && !goalNeedsEdit(st) && st.launchable === true);
       }
       function goalFormRequest() {
+        // No user-set profit target (a risk-first simulation, not a profit promise).
+        // The paper engine still needs an internal reward unit for its RR economics;
+        // derive a small one from capital — never shown or set by the user.
+        const cap = parseFloat($("g-capital").value) || 100;
         return {
-          profit: $("g-profit").value,
+          profit: String(Math.max(1, Math.round(cap * 0.05))),
           capital: $("g-capital").value,
           capital_risk_pct: parseInt($("g-risk").value, 10) || 5,
           leverage_use_pct: parseInt($("g-leverage").value, 10) || 25,
@@ -1559,7 +1562,7 @@
       function verdictText(v, st) {
         if (st && st.blocked_reason) return "Edit plan: " + st.blocked_reason;
         if ((st && st.strategy || "").startsWith("anny_basic") && Number((st && st.trades) || 0) === 0) return "Edit plan: No launchable ANNY Basic setup in this validation window";
-        return ({ target_reached: "🎯 Target reached", max_drawdown: "🛑 Stopped: capital risk limit", max_trades: "⏹ Stopped: max trades", continue: "Target not reached in this window" })[v] || v || "";
+        return ({ target_reached: "✓ Positive result in this window", max_drawdown: "🛑 Stopped: capital-risk limit", max_trades: "⏹ Stopped: max trades", strategy_rule: "⏹ Stopped: strategy rule", continue: "Ran the full window" })[v] || v || "";
       }
       // bcardSpark draws a Binance-style area sparkline (line + soft fill), green
       // when the run ends in profit, red otherwise.
@@ -1593,7 +1596,7 @@
         $("bc-mode").title = needsEdit
           ? "No actionable setup was found in this validation window. Change the plan before launching."
           : "Paper simulation on historical Binance candles. No real orders, no real money, not a prediction or guarantee.";
-        $("bc-pnl-label").textContent = needsEdit ? "Assessment status" : "Paper simulation PnL (USDT)";
+        $("bc-pnl-label").textContent = needsEdit ? "Assessment status" : "Simulated P/L · this window (USDT)";
         if (needsEdit) {
           $("bc-pnl").textContent = "Needs edit";
           $("bc-pnl").className = "bcard-num mono status";
@@ -1613,7 +1616,6 @@
           ["Validation", st.validation_window || st.duration || "—", ""],
           ["Plan action", "Edit plan", "down"],
           ["Capital", cap + " USDT", ""],
-          ["Target", (st.profit_target || "0") + " USDT", ""],
           ["Capital risk", (st.risk_pct || 0) + "%", ""],
           ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ] : [
@@ -1626,7 +1628,6 @@
           ["Entries needed", String(st.estimated_entries || "—"), ""],
           ["Validation", st.validation_window || st.duration || "—", ""],
           ["Capital", cap + " USDT", ""],
-          ["Target", (st.profit_target || "0") + " USDT", ""],
           ["Capital risk", (st.risk_pct || 0) + "%", ""],
           ["Leverage use", (st.leverage_use_pct || 0) + "%", ""],
         ];
@@ -1683,7 +1684,7 @@
         finally { setLoading("g-run", false); }
       }
       $("g-run").onclick = runGoal;
-      $("g-edit").onclick = () => { $("g-profit").focus(); $("view-orders").scrollIntoView({ behavior:"smooth", block:"start" }); };
+      $("g-edit").onclick = () => { $("g-capital").focus(); $("view-orders").scrollIntoView({ behavior:"smooth", block:"start" }); };
       $("g-try-auto").onclick = () => { $("g-strategy").value = "auto"; runGoal(); };
       $("g-try-rsi").onclick = () => { $("g-strategy").value = "rsi"; runGoal(); };
       async function runLiveMission() {
@@ -1703,7 +1704,7 @@
         // A Mission is a multi-trade campaign by default: one confirmation
         // pre-authorizes a bounded, capped series of auto testnet entries toward the
         // target. ANNY opens and closes trades itself until a stop condition fires.
-        if (!(await showConfirm("One confirmation pre-authorizes a bounded, capped SERIES of automatic testnet entries. ANNY opens and closes trades until whichever comes first: your profit target, two consecutive losses, the 15-trade cap, or the plan window ends. Entries may lose. Testnet only. Disarm any time. Trading involves substantial risk. Not financial advice.", { title: "Start Mission?", okLabel: "Start mission" }))) return;
+        if (!(await showConfirm("One confirmation pre-authorizes a bounded, capped SERIES of automatic testnet entries within your risk budget. ANNY opens and closes trades until whichever comes first: two consecutive losses, the 15-trade cap, the capital-risk limit, or the plan window ends. Entries may lose. Testnet only. Disarm any time. Trading involves substantial risk. Not financial advice.", { title: "Start Mission?", okLabel: "Start mission" }))) return;
         goalMsg("⏳ Starting mission — staging on your testnet key, please wait…", true);
         setLoading("g-live", true, "Starting…");
         try {
@@ -1768,9 +1769,9 @@
         const trades = m.trades_closed || 0;
         if (m.status === "running" && left > 0) {
           const head = trades > 0 ? `${trades}t · ${pnl} USDT` : "waiting for a setup";
-          return `🤖 Mission · ${m.symbol || ""} · ${head} · target ${m.target_profit_usdt} · ends in ${fmtCountdown(left)}`;
+          return `🤖 Mission · ${m.symbol || ""} · ${head} · ends in ${fmtCountdown(left)}`;
         }
-        const label = { reached: "🎯 Target reached", stopped: "⏹ Stopped", expired: "⌛ Window ended", disarmed: "Disarmed" }[m.status] || m.status;
+        const label = { reached: "✓ Positive result", stopped: "⏹ Stopped", expired: "⌛ Window ended", disarmed: "Disarmed" }[m.status] || m.status;
         return `${label} · ${m.symbol || ""} · ${trades}t · ${pnl} USDT`;
       }
       function isCampaignRunning(m) { return m && m.status === "running" && new Date(m.expires_at).getTime() > Date.now(); }

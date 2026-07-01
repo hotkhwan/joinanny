@@ -89,7 +89,6 @@ func (s *Server) annyBasicObserve(ctx context.Context, symbol string) (annybasic
 
 func campaignGoalFor(mission CampaignMission) campaign.Goal {
 	capital, _ := decimal.Parse(defaultString(mission.CapitalUSDT, "100"))
-	target, _ := decimal.Parse(defaultString(mission.TargetProfitUSDT, "5"))
 	maxTrades := mission.MaxTrades
 	if maxTrades <= 0 {
 		maxTrades = 15
@@ -101,8 +100,12 @@ func campaignGoalFor(mission CampaignMission) campaign.Goal {
 		}
 	}
 	return campaign.Goal{
-		CapitalUSDT:        capital,
-		TargetProfitUSDT:   target,
+		CapitalUSDT: capital,
+		// No user profit target: a mission runs within its risk budget, not toward a
+		// promised amount. The sentinel makes campaign.Evaluate never stop on profit;
+		// it stops on risk (two losses / trade cap / capital-risk drawdown / window)
+		// and the model's own discipline rule.
+		TargetProfitUSDT:   decimal.NewFromInt(1_000_000_000),
 		RewardPerTradeUSDT: decimal.NewFromInt(2),
 		RiskPerTradeUSDT:   decimal.NewFromInt(1),
 		AssumedWinRate:     55,

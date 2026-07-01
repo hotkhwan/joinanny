@@ -43,13 +43,15 @@ func TestCampaignFinishStatusMapping(t *testing.T) {
 
 func TestCampaignGoalForDerivesDrawdownFromCapitalRisk(t *testing.T) {
 	goal := campaignGoalFor(CampaignMission{
-		CapitalUSDT: "100", TargetProfitUSDT: "5", CapitalRiskPct: 40, MaxTrades: 0,
+		CapitalUSDT: "100", CapitalRiskPct: 40, MaxTrades: 0,
 	})
 	if goal.MaxTrades != 15 {
 		t.Fatalf("MaxTrades = %d, want default 15", goal.MaxTrades)
 	}
-	if goal.TargetProfitUSDT.String() != "5" {
-		t.Fatalf("target = %s, want 5", goal.TargetProfitUSDT.String())
+	// No user profit target: a sentinel makes the profit-target stop unreachable, so
+	// a mission stops only on risk (drawdown / trade cap / window) or the model rule.
+	if goal.TargetProfitUSDT.Cmp(decimal.NewFromInt(1_000_000)) < 0 {
+		t.Fatalf("target = %s, want a no-stop sentinel (>= 1e6)", goal.TargetProfitUSDT.String())
 	}
 	// 40% of 100 = 40 drawdown budget.
 	if goal.MaxDrawdownUSDT.String() != "40" {
