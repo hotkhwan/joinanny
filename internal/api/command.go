@@ -113,7 +113,19 @@ func (s *Server) handleConfirm(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"output": "Cancelled."})
 	}
 
-	result, err := s.orders.Confirm(c.Context(), userID, body.ID)
+	var result orders.ExecutionResult
+	var err error
+	if s.armedMissionRuntimeAllowed() {
+		if !s.hasActiveKeyForSubject(c.Context(), claimsOf(c).Subject) {
+			return c.JSON(fiber.Map{
+				"output":   "🔑 No active testnet Binance key is available for this confirmation. Open Settings, make a testnet key active, then stage the Mission again.",
+				"need_key": true,
+			})
+		}
+		result, err = s.orders.ConfirmWithRequiredUserExecutor(c.Context(), userID, body.ID)
+	} else {
+		result, err = s.orders.Confirm(c.Context(), userID, body.ID)
+	}
 	if err != nil {
 		// Do NOT cancel the awaiting close here: a duplicate/concurrent confirm can
 		// hit "already executing" while the first call is still placing the entry.

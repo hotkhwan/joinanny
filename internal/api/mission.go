@@ -195,21 +195,29 @@ func (s *Server) handleMissionPrepare(c fiber.Ctx) error {
 	if err != nil {
 		return c.JSON(fiber.Map{"output": "⚠️ " + err.Error()})
 	}
-	// Persist a durable awaiting-entry close now (keyed by the confirmation id). It
-	// stays poller-invisible until the entry actually confirms, and survives an API
-	// restart — so a confirm after a restart still arms the plan-end close. If it
-	// can't be persisted, cancel the confirmation rather than let the user confirm an
-	// entry with no timed close while the copy promises one.
-	if _, err := s.scheduleTimedMissionClose(timedMission{
+	// Persist a durable awaiting-entry close when the runtime gate allows live
+	// testnet missions. Gate-off dry-run prepares intentionally have no close row,
+	// so their response copy must not promise a timed close.
+	timedClose, err := s.scheduleTimedMissionClose(timedMission{
 		UserID: userID, Symbol: symbol, Side: side, Duration: planDuration(durationKey),
-	}, confirmation.ID); err != nil {
+	}, confirmation.ID)
+	if err != nil {
 		s.logger.Warn("could not persist awaiting timed close; cancelling confirmation", "error", err)
 		_ = s.orders.Cancel(c.Context(), userID, confirmation.ID)
 		return c.JSON(fiber.Map{"output": "⚠️ Could not prepare this Mission's timed close — nothing was staged. Please try again."})
 	}
+	timedCloseAttached := timedClose.ID != ""
+	output := "Review this live Mission (testnet) - Confirm authorizes the entry"
+	if timedCloseAttached {
+		output += " and a timed close at the end of the plan if TP/SL has not closed it first"
+	}
+	output += ":\n\n" + orders.Summary(intent) + "\n\nA protective stop and take-profit are attached to this testnet entry."
+	if timedCloseAttached {
+		output = strings.TrimSuffix(output, ".") + ", with a timed close attached."
+	}
 	s.usage.Incr(claimsOf(c).Subject, "mission") // count the attempt toward the daily limit
 	return c.JSON(fiber.Map{
-		"output":     "🚀 Review this live Mission (testnet) — Confirm authorizes the entry and a timed close at the end of the plan if TP/SL has not closed it first:\n\n" + orders.Summary(intent) + "\n\nA protective stop, take-profit, and timed close are attached to this testnet entry.",
+		"output":     output,
 		"confirm_id": confirmation.ID,
 		"mission": fiber.Map{
 			"symbol": symbol, "side": side, "entry": trimPrice(entry),

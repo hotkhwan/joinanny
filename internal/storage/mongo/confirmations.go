@@ -36,6 +36,12 @@ type executionResultDoc struct {
 	Message       string `bson:"message"`
 }
 
+const terminalConfirmationRetention = 90 * 24 * time.Hour
+
+func terminalConfirmationExpiresAt(now time.Time) time.Time {
+	return now.Add(terminalConfirmationRetention)
+}
+
 func (s *Store) Put(ctx context.Context, confirmation orders.Confirmation) error {
 	doc, err := newConfirmationDoc(confirmation)
 	if err != nil {
@@ -95,10 +101,12 @@ func (s *Store) TakeForExecution(ctx context.Context, userID int64, id string, n
 }
 
 func (s *Store) Complete(ctx context.Context, id string, result orders.ExecutionResult) error {
+	now := time.Now().UTC()
 	update := bson.D{{Key: "$set", Value: bson.D{
 		{Key: "status", Value: orders.StatusExecuted},
 		{Key: "result", Value: newExecutionResultDoc(result)},
-		{Key: "updated_at", Value: time.Now()},
+		{Key: "updated_at", Value: now},
+		{Key: "expires_at", Value: terminalConfirmationExpiresAt(now)},
 	}}}
 	matched, err := s.updateConfirmation(ctx, id, orders.StatusExecuting, update)
 	if err != nil {
@@ -111,10 +119,12 @@ func (s *Store) Complete(ctx context.Context, id string, result orders.Execution
 }
 
 func (s *Store) Fail(ctx context.Context, id string, message string) error {
+	now := time.Now().UTC()
 	update := bson.D{{Key: "$set", Value: bson.D{
 		{Key: "status", Value: orders.StatusFailed},
 		{Key: "error_message", Value: message},
-		{Key: "updated_at", Value: time.Now()},
+		{Key: "updated_at", Value: now},
+		{Key: "expires_at", Value: terminalConfirmationExpiresAt(now)},
 	}}}
 	matched, err := s.updateConfirmation(ctx, id, orders.StatusExecuting, update)
 	if err != nil {

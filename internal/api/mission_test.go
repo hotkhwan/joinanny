@@ -155,6 +155,81 @@ func TestMissionPrepareAndConfirm(t *testing.T) {
 	}
 }
 
+func TestMissionPrepareGateOffOmitsTimedClosePromise(t *testing.T) {
+	stub := stubKlines(t)
+	cfg := testConfigWith(t, map[string]string{"MARKETDATA_BASE_URL": stub.URL, "ACCESS_OPEN": "true"})
+	tk, _ := auth.NewTokenizer(bytes.Repeat([]byte("k"), auth.MinSecretSize), 0)
+	token, _ := tk.Issue("tg:468848033", "u", "user")
+	closeStore := newMemScheduledCloses()
+	server := NewServer(cfg, nil, testLogger(),
+		WithTokenizer(tk), WithOrders(orders.NewService(true, time.Minute, testLogger())),
+		WithScheduledCloseStore(closeStore))
+
+	body, _ := json.Marshal(map[string]any{
+		"symbol": "BTC", "capital": 100, "strategy": "ema", "duration": "15m", "leverage_use_pct": 50,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/mission/prepare", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, _ := server.App().Test(req)
+	defer resp.Body.Close()
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+
+	output, _ := out["output"].(string)
+	if out["confirm_id"] == nil {
+		t.Fatalf("prepare = %v, want staged dry-run mission", out)
+	}
+	if strings.Contains(strings.ToLower(output), "timed close") {
+		t.Fatalf("gate-off output promised timed close: %q", output)
+	}
+	if len(closeStore.rows) != 0 {
+		t.Fatalf("scheduled closes = %+v, want none while runtime gate is off", closeStore.rows)
+	}
+}
+
+func TestMissionConfirmRequiresPerUserExecutorWhenRuntimeEnabled(t *testing.T) {
+	stub := stubKlines(t)
+	cfg := testConfigWith(t, missionArmRuntimeEnv(stub.URL))
+	tk, _ := auth.NewTokenizer(bytes.Repeat([]byte("k"), auth.MinSecretSize), 0)
+	token, _ := tk.Issue("tg:468848033", "u", "user")
+	fallbackExec := &missionTestExecutor{}
+	orderSvc := orders.NewServiceWithRepositories(time.Minute, fallbackExec, orders.ServiceDependencies{
+		ExecutorProvider: missionTestProvider{found: false},
+	}, testLogger())
+	server := NewServer(cfg, nil, testLogger(),
+		WithTokenizer(tk), WithOrders(orderSvc),
+		WithCredentials(testCredentialService(t, "tg:468848033", true)),
+		WithScheduledCloseStore(newMemScheduledCloses()))
+
+	post := func(path string, body any) map[string]any {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, _ := server.App().Test(req)
+		defer resp.Body.Close()
+		var out map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	prepared := post("/api/mission/prepare", map[string]any{
+		"symbol": "BTC", "capital": 100, "strategy": "ema", "duration": "15m", "leverage_use_pct": 50,
+	})
+	cid, _ := prepared["confirm_id"].(string)
+	if cid == "" {
+		t.Fatalf("prepare = %v, want confirmation id", prepared)
+	}
+	confirmed := post("/api/confirm", map[string]any{"id": cid})
+	if output, _ := confirmed["output"].(string); !strings.Contains(output, "active per-user executor is required") {
+		t.Fatalf("confirm output = %q, want required per-user executor failure", output)
+	}
+	if fallbackExec.calls != 0 {
+		t.Fatalf("fallback executor calls = %d, want 0", fallbackExec.calls)
+	}
+}
+
 func TestMissionPrepareANNYBasicDoesNotFallbackToEMA(t *testing.T) {
 	stub := stubKlines(t)
 	cfg := testConfigWith(t, missionArmRuntimeEnv(stub.URL))
