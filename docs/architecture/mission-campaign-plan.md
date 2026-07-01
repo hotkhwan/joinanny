@@ -121,8 +121,17 @@ F1–F4.
   a regulator would scrutinize as managed-investment-like (same gate as [[arm-mission-feature]] real-trading block). Do
   not use these strings in front-page marketing without external review. Docs + memory updated.
 
+### Post-ship fixes (2026-07-01)
+- **Per-user CloseResolver** (`mission_campaign_resolver.go`): replaced `campaignexec.RealtimeResolver` — which watched a
+  single (admin) account's stream and matched on symbol only, so it could miss/mis-attribute a user's close and stall
+  the loop after the first trade. `userPositionResolver` polls the USER's own executor
+  (`PositionsWithRequiredUserExecutor` → `RealizedTradeWithRequiredUserExecutor`), so multi-trade cycles reliably per
+  user. This also drops the `s.stream != nil` requirement from `campaignMissionRuntimeAllowed`.
+- **Multi-trade is the default Mission** (no opt-in checkbox): the dashboard Launch always runs the campaign; one
+  confirmation authorizes the bounded series. In-app themed confirm modal replaces the native `confirm()`.
+
 ### Known follow-ups (not blockers)
 - The synchronous LiveTrader opens+awaits-close per trade, so at most one position is open at a time and it is always
   closed before re-evaluation — the "flush open position on target" decision is therefore a no-op in practice.
-- `RealtimeResolver` subscribes after the order is placed (documented small race); a user-data WebSocket removes it.
-- Per-tier caps (armed/campaign 3/user, quotas) remain hardcoded — see `subscription-gated-limits`.
+- The resolver learns side/qty from the first open-position poll; a trade that opens+closes inside one 6s poll is missed
+  (rare on testnet SL/TP). Per-tier caps (armed/campaign 3/user, quotas) remain hardcoded — see `subscription-gated-limits`.

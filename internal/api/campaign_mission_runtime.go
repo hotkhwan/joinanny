@@ -22,9 +22,12 @@ const (
 	// its durable timed close flushes it, so trades cycle instead of one held to the
 	// window end. Capped to the remaining window at schedule time.
 	campaignPerTradeMaxHold = 30 * time.Minute
-	// campaignTradeResolveTimeout bounds RealtimeResolver's wait for one trade to
+	// campaignTradeResolveTimeout bounds the resolver's wait for one trade to
 	// close; SL/TP or the per-trade timed close resolve well within it.
-	campaignTradeResolveTimeout      = 40 * time.Minute
+	campaignTradeResolveTimeout = 40 * time.Minute
+	// campaignResolvePollInterval is how often the per-user resolver polls the
+	// user's own positions to detect a close.
+	campaignResolvePollInterval      = 6 * time.Second
 	maxActiveCampaignMissionsPerUser = 3
 )
 
@@ -38,9 +41,10 @@ func newCampaignMissionID() (string, error) {
 
 // campaignMissionRuntimeAllowed reuses the armed-mission runtime gate: campaigns
 // place real testnet orders and must never run outside the testnet, real-trading-off
-// envelope.
+// envelope. Close detection polls the user's own executor (userPositionResolver),
+// so no shared realtime broadcaster is required.
 func (s *Server) campaignMissionRuntimeAllowed() bool {
-	return s.armedMissionRuntimeAllowed() && s.stream != nil
+	return s.armedMissionRuntimeAllowed()
 }
 
 // campaignMissionGate is re-asserted before EVERY re-entry (staged and confirmed),
@@ -199,7 +203,7 @@ func (s *Server) startCampaignMissionRunner(parent context.Context, mission Camp
 		advisor:      advisor,
 		signals:      campaignexec.NewMarketDataSignals(s.market),
 		placer:       placer,
-		resolver:     campaignexec.NewRealtimeResolver(s.stream, campaignTradeResolveTimeout),
+		resolver:     newUserPositionResolver(s.orders, mission.UserID, s.logger),
 		goal:         campaignGoalFor(mission),
 		symbol:       mission.Symbol,
 		userID:       mission.UserID,

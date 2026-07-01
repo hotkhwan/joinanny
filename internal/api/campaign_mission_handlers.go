@@ -28,7 +28,7 @@ func (s *Server) handleArmCampaignMission(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"output": "A live Mission needs a Telegram login (your key is tied to your Telegram account)."})
 	}
 	if !s.campaignMissionRuntimeAllowed() {
-		return c.JSON(fiber.Map{"output": "Multi-trade missions run only in testnet live-mission mode (CampaignLiveEnabled, Binance testnet, dry-run off, real trading off) with the realtime gateway on. No order was staged."})
+		return c.JSON(fiber.Map{"output": "Multi-trade missions run only in testnet live-mission mode (CampaignLiveEnabled, Binance testnet, dry-run off, real trading off). No order was staged."})
 	}
 	userKey := claimsOf(c).Subject
 	if !s.hasActiveKeyForSubject(c.Context(), userKey) {

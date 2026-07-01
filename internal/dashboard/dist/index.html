@@ -514,7 +514,7 @@
         <div class="card" id="live-card">
           <div class="flow-step"><span class="flow-no">3</span><strong>Launch &amp; confirm</strong></div>
           <p id="g-step3-sub" style="margin:0.3rem 0">Review the proposed testnet order. Nothing is placed until you confirm.</p>
-          <label id="g-multitrade-row" style="display:flex;align-items:center;gap:0.4rem;margin:0.3rem 0 0.5rem;font-size:0.9rem;cursor:pointer"><input type="checkbox" id="g-multitrade"/> Multi-trade mission<span class="ibadge" data-info="One confirmation pre-authorizes a bounded, capped series of automatic testnet re-entries. ANNY opens and closes ANNY Basic trades until whichever comes first: your profit target, two consecutive losses, the 15-trade cap, or the plan window ends. Entries can result in losses; every trade is recorded. Testnet only. You can disarm any time. Trading digital assets involves substantial risk. Not financial advice.">ⓘ</span></label>
+          <p id="g-mission-note" style="margin:0.1rem 0 0.4rem;font-size:0.8rem;color:var(--muted)">A Mission runs as a multi-trade campaign — ANNY auto-opens and closes capped entries toward your target until the target, two losses, the 15-trade cap, or the plan window ends. Testnet only. Disarm any time. <span class="ibadge" data-info="One confirmation pre-authorizes a bounded, capped series of automatic testnet re-entries. Entries can result in losses; every trade is recorded. Trading digital assets involves substantial risk. Not financial advice.">ⓘ</span></p>
           <pre id="g-confirm-out" class="output hidden"></pre>
           <div id="g-armed-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
           <div id="g-campaign-status" class="hidden" style="margin:0.4rem 0;font:600 0.85rem var(--font-mono)"></div>
@@ -1668,39 +1668,21 @@
           return;
         }
         const body = Object.assign({}, lastGoalRequest);
-        if ($("g-multitrade") && $("g-multitrade").checked) {
-          if (!(await showConfirm("One confirmation pre-authorizes a bounded, capped SERIES of automatic testnet entries. ANNY opens and closes trades until whichever comes first: your profit target, two consecutive losses, the 15-trade cap, or the plan window ends. Entries may lose. Testnet only. Disarm any time. Trading involves substantial risk. Not financial advice.", { title: "Start multi-trade Mission?", okLabel: "Start mission" }))) return;
-          goalMsg("Starting multi-trade mission…", true);
-          $("g-live").disabled = true;
-          try {
-            const r = await fetch("/api/mission/campaign/arm", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
-            goalMsg("");
-            if (d.need_key) { goalMsg("Add & activate a Binance key in Settings first."); navigate("settings"); return; }
-            $("g-confirm-out").textContent = d.output || ""; $("g-confirm-out").classList.remove("hidden");
-            if (d.campaign) setCampaignState(d.campaign);
-            addMissionActivity(d.output || "Multi-trade mission started.");
-            $("live-card").scrollIntoView({ behavior: "smooth", block: "start" });
-          } catch (e) { goalMsg("Network error"); }
-          finally { $("g-live").disabled = false; }
-          return;
-        }
-        if (!(await showConfirm("If no setup is live, ANNY can arm the plan and auto-place one capped testnet entry inside this window. No setup is guaranteed. Testnet only. Not financial advice.", { title: "Run a testnet Mission?", okLabel: "Run mission" }))) return;
-        goalMsg("Preparing live Mission…", true);
+        // A Mission is a multi-trade campaign by default: one confirmation
+        // pre-authorizes a bounded, capped series of auto testnet entries toward the
+        // target. ANNY opens and closes trades itself until a stop condition fires.
+        if (!(await showConfirm("One confirmation pre-authorizes a bounded, capped SERIES of automatic testnet entries. ANNY opens and closes trades until whichever comes first: your profit target, two consecutive losses, the 15-trade cap, or the plan window ends. Entries may lose. Testnet only. Disarm any time. Trading involves substantial risk. Not financial advice.", { title: "Start Mission?", okLabel: "Start mission" }))) return;
+        goalMsg("Starting mission…", true);
         $("g-live").disabled = true;
         try {
-          const r = await fetch("/api/mission/prepare", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+          const r = await fetch("/api/mission/campaign/arm", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
           const d = await r.json().catch(() => ({}));
           if (!r.ok) { goalMsg(d.error || `Failed (${r.status})`); return; }
           goalMsg("");
           if (d.need_key) { goalMsg("Add & activate a Binance key in Settings first."); navigate("settings"); return; }
-          // Show the order + Confirm right here under the button, not in the chat box.
           $("g-confirm-out").textContent = d.output || ""; $("g-confirm-out").classList.remove("hidden");
-          pendingMission = d.mission || null;
-          if (d.armed) { setArmedState(d.armed, d.output || "Armed — waiting for setup; one capped testnet entry may be auto-placed before expiry."); }
-          else if (d.confirm_id) { resetArmedUI(); missionConfirmId = d.confirm_id; $("g-confirm-actions").classList.remove("hidden"); }
-          else { resetArmedUI(); $("g-confirm-actions").classList.add("hidden"); }
+          if (d.campaign) setCampaignState(d.campaign);
+          addMissionActivity(d.output || "Mission started.");
           $("live-card").scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (e) { goalMsg("Network error"); }
         finally { $("g-live").disabled = false; }
